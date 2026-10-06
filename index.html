@@ -571,60 +571,162 @@ function AuthScreen({ onAuthenticated }) {
     useEffect(() => {
         authFetch("/api/auth/status")
             .then((r) => setNeedsSetup(!!r.needsSetup))
-            .catch(() => { setNeedsSetup(false); setError("Não foi possível verificar o acesso. Tente novamente."); });
+            .catch(() => {
+                setNeedsSetup(false);
+                setError("Não foi possível verificar o acesso.");
+            });
     }, []);
 
     async function submit(e) {
         e.preventDefault();
-        setError("");
         setBusy(true);
+        setError("");
         try {
-            const path = needsSetup ? "/api/auth/setup" : "/api/auth/login";
+            const endpoint = needsSetup ? "/api/auth/setup" : "/api/auth/login";
             const body = needsSetup ? { nome, email, password } : { email, password };
-            const result = await authFetch(path, { method: "POST", body: JSON.stringify(body) });
+            const result = await authFetch(endpoint, {
+                method: "POST",
+                body: JSON.stringify(body)
+            });
             setAuthToken(result.token);
             onAuthenticated(result.user);
         } catch (err) {
-            if (err.data?.error === "invalid_credentials") setError("E-mail ou senha inválidos.");
-            else if (err.data?.error === "setup_already_done") {
+            const code = err.data?.error;
+            if (code === "invalid_credentials") setError("E-mail ou senha inválidos.");
+            else if (code === "setup_already_done") {
                 setNeedsSetup(false);
                 setError("O administrador inicial já foi criado. Faça login.");
+            } else {
+                setError("Não foi possível concluir o acesso. Verifique os dados.");
             }
-            else if (err.data?.error === "invalid_input") setError("Preencha os campos corretamente. A senha deve ter pelo menos 8 caracteres.");
-            else setError("Não foi possível concluir o acesso agora.");
         } finally {
             setBusy(false);
         }
     }
 
     if (needsSetup === null) {
-        return React.createElement("div", { style: { minHeight: "80vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#5C7876", fontFamily: "Inter, system-ui, sans-serif" } }, "Verificando acesso…");
+        return React.createElement("div", {
+            style: {
+                minHeight: "80vh",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "#5C7876",
+                fontFamily: "Inter, system-ui, sans-serif"
+            }
+        }, "Verificando acesso…");
     }
 
-    return React.createElement("div", { style: { minHeight: "88vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, fontFamily: "Inter, system-ui, sans-serif", background: "#F5F8F8" } },
-        React.createElement("div", { style: { width: 430, maxWidth: "100%", background: "#fff", border: "1px solid #DEE9E7", borderRadius: 16, padding: 28, boxShadow: "0 18px 50px rgba(10,79,79,0.10)" } },
-            React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 10, marginBottom: 24 } },
-                React.createElement("div", { style: { width: 38, height: 38, borderRadius: 10, background: "#0F6E6E", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800 } }, "P"),
+    return React.createElement("div", {
+        style: {
+            minHeight: "88vh",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20,
+            background: "#F5F8F8",
+            fontFamily: "Inter, system-ui, sans-serif"
+        }
+    },
+        React.createElement("div", {
+            style: {
+                width: 430,
+                maxWidth: "100%",
+                background: "#fff",
+                border: "1px solid #DEE9E7",
+                borderRadius: 16,
+                padding: 28,
+                boxShadow: "0 18px 50px rgba(10,79,79,0.10)"
+            }
+        },
+            React.createElement("div", {
+                style: { display: "flex", alignItems: "center", gap: 10, marginBottom: 22 }
+            },
+                React.createElement("div", {
+                    style: {
+                        width: 38, height: 38, borderRadius: 10,
+                        background: "#0F6E6E", color: "#fff",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        fontWeight: 800
+                    }
+                }, "P"),
                 React.createElement("div", null,
-                    React.createElement("div", { style: { fontSize: 20, fontWeight: 800, color: "#16302E" } }, "PatrimôNet"),
-                    React.createElement("div", { style: { fontSize: 12.5, color: "#5C7876", marginTop: 2 } }, needsSetup ? "Crie o primeiro administrador" : "Acesse sua conta"))),
+                    React.createElement("div", {
+                        style: { fontSize: 20, fontWeight: 800, color: "#16302E" }
+                    }, "PatrimôNet"),
+                    React.createElement("div", {
+                        style: { fontSize: 12.5, color: "#5C7876", marginTop: 2 }
+                    }, needsSetup ? "Crie o primeiro administrador" : "Acesse sua conta")
+                )
+            ),
             React.createElement("form", { onSubmit: submit },
-                needsSetup && React.createElement(Field, { label: "Nome" },
-                    React.createElement("input", { style: { ...inputStyle, marginBottom: 13 }, value: nome, onChange: (e) => setNome(e.target.value), placeholder: "Seu nome", required: true })),
+                needsSetup ? React.createElement(Field, { label: "Nome" },
+                    React.createElement("input", {
+                        style: { ...inputStyle, marginBottom: 13 },
+                        value: nome,
+                        onChange: (e) => setNome(e.target.value),
+                        required: true
+                    })
+                ) : null,
                 React.createElement(Field, { label: "E-mail" },
-                    React.createElement("input", { type: "email", style: { ...inputStyle, marginBottom: 13 }, value: email, onChange: (e) => setEmail(e.target.value), placeholder: "seu@email.com", required: true })),
+                    React.createElement("input", {
+                        type: "email",
+                        style: { ...inputStyle, marginBottom: 13 },
+                        value: email,
+                        onChange: (e) => setEmail(e.target.value),
+                        required: true
+                    })
+                ),
                 React.createElement(Field, { label: "Senha" },
-                    React.createElement("input", { type: "password", style: { ...inputStyle, marginBottom: 8 }, value: password, onChange: (e) => setPassword(e.target.value), placeholder: needsSetup ? "Mínimo de 8 caracteres" : "Sua senha", required: true })),
-                error && React.createElement("div", { style: { color: "#C1443D", background: "#FBEAE9", borderRadius: 8, padding: "9px 11px", fontSize: 12.5, margin: "10px 0" } }, error),
-                React.createElement("button", { type: "submit", disabled: busy, style: { width: "100%", marginTop: 10, border: "none", borderRadius: 9, padding: "11px 14px", background: busy ? "#9DBAB7" : "#0F6E6E", color: "#fff", fontWeight: 700, cursor: busy ? "wait" : "pointer" } }, busy ? "Processando…" : needsSetup ? "Criar administrador" : "Entrar")),
-            needsSetup && React.createElement("div", { style: { fontSize: 11.5, color: "#718B88", marginTop: 14, lineHeight: 1.5 } }, "Esta etapa aparece somente uma vez. Depois, novos usuários serão criados pelo administrador dentro do sistema.")));
+                    React.createElement("input", {
+                        type: "password",
+                        minLength: 8,
+                        style: { ...inputStyle, marginBottom: 8 },
+                        value: password,
+                        onChange: (e) => setPassword(e.target.value),
+                        required: true
+                    })
+                ),
+                error ? React.createElement("div", {
+                    style: {
+                        color: "#C1443D",
+                        background: "#FBEAE9",
+                        borderRadius: 8,
+                        padding: "9px 11px",
+                        fontSize: 12.5,
+                        margin: "10px 0"
+                    }
+                }, error) : null,
+                React.createElement("button", {
+                    type: "submit",
+                    disabled: busy,
+                    style: {
+                        width: "100%",
+                        marginTop: 10,
+                        border: "none",
+                        borderRadius: 9,
+                        padding: "11px 14px",
+                        background: busy ? "#9DBAB7" : "#0F6E6E",
+                        color: "#fff",
+                        fontWeight: 700,
+                        cursor: busy ? "wait" : "pointer"
+                    }
+                }, busy ? "Processando…" : (needsSetup ? "Criar administrador" : "Entrar"))
+            )
+        )
+    );
 }
 
 function UsersView({ notify, currentUser }) {
     const [users, setUsers] = useState([]);
     const [loadingUsers, setLoadingUsers] = useState(true);
-    const [form, setForm] = useState({ nome: "", email: "", password: "", role: "operator" });
     const [error, setError] = useState("");
+    const [form, setForm] = useState({
+        nome: "",
+        email: "",
+        password: "",
+        role: "operator"
+    });
 
     async function loadUsers() {
         setLoadingUsers(true);
@@ -637,71 +739,197 @@ function UsersView({ notify, currentUser }) {
             setLoadingUsers(false);
         }
     }
-    useEffect(() => { loadUsers(); }, []);
+
+    useEffect(() => {
+        loadUsers();
+    }, []);
 
     async function createUser(e) {
         e.preventDefault();
         setError("");
         try {
-            await authFetch("/api/users", { method: "POST", body: JSON.stringify(form) });
+            await authFetch("/api/users", {
+                method: "POST",
+                body: JSON.stringify(form)
+            });
             setForm({ nome: "", email: "", password: "", role: "operator" });
             notify("Usuário criado");
             await loadUsers();
         } catch (err) {
-            if (err.data?.error === "email_exists") setError("Já existe um usuário com esse e-mail.");
-            else setError("Não foi possível criar o usuário. Verifique os campos e use senha com pelo menos 8 caracteres.");
+            setError(err.data?.error === "email_exists"
+                ? "Já existe um usuário com esse e-mail."
+                : "Não foi possível criar o usuário.");
         }
     }
 
     async function patchUser(id, changes) {
+        setError("");
         try {
-            await authFetch(`/api/users/${id}`, { method: "PATCH", body: JSON.stringify(changes) });
-            notify("Permissão atualizada");
+            await authFetch("/api/users/" + id, {
+                method: "PATCH",
+                body: JSON.stringify(changes)
+            });
+            notify("Usuário atualizado");
             await loadUsers();
         } catch (err) {
-            if (err.data?.error === "cannot_disable_self") setError("Você não pode desativar a própria conta.");
-            else setError("Não foi possível atualizar o usuário.");
+            setError(err.data?.error === "cannot_disable_self"
+                ? "Você não pode desativar a própria conta."
+                : "Não foi possível atualizar o usuário.");
         }
     }
 
-    const roleLabel = (r) => r === "admin" ? "Administrador" : r === "operator" ? "Operador" : "Consulta";
+    const roleName = (r) => r === "admin" ? "Administrador" : (r === "operator" ? "Operador" : "Consulta");
+
+    const rows = loadingUsers
+        ? React.createElement("div", {
+            style: { padding: 20, color: "var(--text-secondary)" }
+          }, "Carregando…")
+        : React.createElement("div", { style: { display: "grid", gap: 8 } },
+            users.map((u) => React.createElement("div", {
+                key: u.id,
+                style: {
+                    display: "grid",
+                    gridTemplateColumns: "1fr 180px 90px",
+                    gap: 10,
+                    alignItems: "center",
+                    border: "1px solid var(--border)",
+                    borderRadius: 9,
+                    padding: 11
+                }
+            },
+                React.createElement("div", null,
+                    React.createElement("div", {
+                        style: { fontWeight: 700, color: "var(--text-primary)" }
+                    }, u.nome, Number(u.id) === Number(currentUser.id) ? " (você)" : ""),
+                    React.createElement("div", {
+                        style: { fontSize: 11.5, color: "var(--text-secondary)", marginTop: 2 }
+                    }, u.email)
+                ),
+                React.createElement("select", {
+                    value: u.role,
+                    onChange: (e) => patchUser(u.id, { role: e.target.value }),
+                    style: { ...inputStyle, padding: "7px 8px" }
+                },
+                    React.createElement("option", { value: "admin" }, roleName("admin")),
+                    React.createElement("option", { value: "operator" }, roleName("operator")),
+                    React.createElement("option", { value: "viewer" }, roleName("viewer"))
+                ),
+                React.createElement("button", {
+                    type: "button",
+                    onClick: () => patchUser(u.id, { ativo: !u.ativo }),
+                    style: {
+                        border: "none",
+                        borderRadius: 20,
+                        padding: "6px 9px",
+                        cursor: "pointer",
+                        fontWeight: 700,
+                        fontSize: 11.5,
+                        background: u.ativo ? "var(--success-bg)" : "var(--danger-bg)",
+                        color: u.ativo ? "var(--success)" : "var(--danger)"
+                    }
+                }, u.ativo ? "Ativo" : "Inativo")
+            ))
+        );
 
     return React.createElement("div", null,
-        React.createElement(SectionHeader, { title: "Usuários e permissões", subtitle: "Controle quem pode visualizar e alterar o patrimônio" }),
-        React.createElement("div", { className: "grid-2", style: { display: "grid", gridTemplateColumns: "360px 1fr", gap: 18 } },
-            React.createElement("form", { onSubmit: createUser, style: { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 18, alignSelf: "start" } },
-                React.createElement("h3", { style: { margin: "0 0 14px", fontSize: 15 } }, "Novo usuário"),
-                React.createElement(Field, { label: "Nome" }, React.createElement("input", { style: { ...inputStyle, marginBottom: 11 }, value: form.nome, onChange: (e) => setForm({ ...form, nome: e.target.value }), required: true })),
-                React.createElement(Field, { label: "E-mail" }, React.createElement("input", { type: "email", style: { ...inputStyle, marginBottom: 11 }, value: form.email, onChange: (e) => setForm({ ...form, email: e.target.value }), required: true })),
-                React.createElement(Field, { label: "Senha inicial" }, React.createElement("input", { type: "password", minLength: 8, style: { ...inputStyle, marginBottom: 11 }, value: form.password, onChange: (e) => setForm({ ...form, password: e.target.value }), required: true })),
+        React.createElement(SectionHeader, {
+            title: "Usuários e permissões",
+            subtitle: "Controle quem pode visualizar e alterar o patrimônio"
+        }),
+        React.createElement("div", {
+            className: "grid-2",
+            style: {
+                display: "grid",
+                gridTemplateColumns: "360px 1fr",
+                gap: 18
+            }
+        },
+            React.createElement("form", {
+                onSubmit: createUser,
+                style: {
+                    background: "var(--surface)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 12,
+                    padding: 18,
+                    alignSelf: "start"
+                }
+            },
+                React.createElement("h3", {
+                    style: { margin: "0 0 14px", fontSize: 15 }
+                }, "Novo usuário"),
+                React.createElement(Field, { label: "Nome" },
+                    React.createElement("input", {
+                        style: { ...inputStyle, marginBottom: 11 },
+                        value: form.nome,
+                        onChange: (e) => setForm({ ...form, nome: e.target.value }),
+                        required: true
+                    })
+                ),
+                React.createElement(Field, { label: "E-mail" },
+                    React.createElement("input", {
+                        type: "email",
+                        style: { ...inputStyle, marginBottom: 11 },
+                        value: form.email,
+                        onChange: (e) => setForm({ ...form, email: e.target.value }),
+                        required: true
+                    })
+                ),
+                React.createElement(Field, { label: "Senha inicial" },
+                    React.createElement("input", {
+                        type: "password",
+                        minLength: 8,
+                        style: { ...inputStyle, marginBottom: 11 },
+                        value: form.password,
+                        onChange: (e) => setForm({ ...form, password: e.target.value }),
+                        required: true
+                    })
+                ),
                 React.createElement(Field, { label: "Perfil" },
-                    React.createElement("select", { style: { ...inputStyle, marginBottom: 14 }, value: form.role, onChange: (e) => setForm({ ...form, role: e.target.value }) },
+                    React.createElement("select", {
+                        style: { ...inputStyle, marginBottom: 14 },
+                        value: form.role,
+                        onChange: (e) => setForm({ ...form, role: e.target.value })
+                    },
                         React.createElement("option", { value: "operator" }, "Operador — pode alterar"),
                         React.createElement("option", { value: "viewer" }, "Consulta — somente leitura"),
-                        React.createElement("option", { value: "admin" }, "Administrador — acesso total"))),
-                error && React.createElement("div", { style: { color: "var(--danger)", fontSize: 12, marginBottom: 10 } }, error),
-                React.createElement(PrimaryButton, { type: "submit", icon: Plus }, "Criar usuário")),
-            React.createElement("div", { style: { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 18 } },
-                React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 } },
-                    React.createElement("h3", { style: { margin: 0, fontSize: 15 } }, "Usuários cadastrados"),
-                    React.createElement("span", { style: { fontSize: 12, color: "var(--text-secondary)" } }, users.length, " usuário", users.length !== 1 ? "s" : "")),
-                loadingUsers ? React.createElement("div", { style: { color: "var(--text-secondary)", padding: 20 } }, "Carregando…") :
-                React.createElement("div", { className: "table-scroll" },
-                    React.createElement("table", { style: { width: "100%", borderCollapse: "collapse", fontSize: 13 } },
-                        React.createElement("thead", null, React.createElement("tr", { style: { borderBottom: "1px solid var(--border)" } },
-                            ["Usuário","Perfil","Status"].map((h) => React.createElement("th", { key: h, style: { textAlign: "left", padding: "9px 10px", color: "var(--text-secondary)", fontSize: 11, textTransform: "uppercase" } }, h)))),
-                        React.createElement("tbody", null, users.map((u) =>
-                            React.createElement("tr", { key: u.id, style: { borderBottom: "1px solid var(--border)" } },
-                                React.createElement("td", { style: { padding: "11px 10px" } },
-                                    React.createElement("div", { style: { fontWeight: 700 } }, u.nome, Number(u.id) === Number(currentUser.id) ? " (você)" : ""),
-                                    React.createElement("div", { style: { fontSize: 11.5, color: "var(--text-secondary)", marginTop: 2 } }, u.email)),
-                                React.createElement("td", { style: { padding: "11px 10px" } },
-                                    React.createElement("select", { style: { ...inputStyle, padding: "6px 8px" }, value: u.role, onChange: (e) => patchUser(u.id, { role: e.target.value }) },
-                                        React.createElement("option", { value: "admin" }, roleLabel("admin")),
-                                        React.createElement("option", { value: "operator" }, roleLabel("operator")),
-                                        React.createElement("option", { value: "viewer" }, roleLabel("viewer")))),
-                                React.createElement("td", { style: { padding: "11px 10px" } },
-                                    React.createElement("button", { onClick: () => patchUser(u.id, { ativo: !u.ativo }), style: { border: "none", borderRadius: 20, padding: "5px 9px", cursor: "pointer", fontWeight: 700, fontSize: 11.5, background: u.ativo ? "var(--success-bg)" : "var(--danger-bg)", color: u.ativo ? "var(--success)" : "var(--danger)" } }, u.ativo ? "Ativo" : "Inativo")))))))));
+                        React.createElement("option", { value: "admin" }, "Administrador — acesso total")
+                    )
+                ),
+                error ? React.createElement("div", {
+                    style: { color: "var(--danger)", fontSize: 12, marginBottom: 10 }
+                }, error) : null,
+                React.createElement(PrimaryButton, {
+                    type: "submit",
+                    icon: Plus
+                }, "Criar usuário")
+            ),
+            React.createElement("div", {
+                style: {
+                    background: "var(--surface)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 12,
+                    padding: 18
+                }
+            },
+                React.createElement("div", {
+                    style: {
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        marginBottom: 14
+                    }
+                },
+                    React.createElement("h3", {
+                        style: { margin: 0, fontSize: 15 }
+                    }, "Usuários cadastrados"),
+                    React.createElement("span", {
+                        style: { fontSize: 12, color: "var(--text-secondary)" }
+                    }, users.length, " usuário", users.length !== 1 ? "s" : "")
+                ),
+                rows
+            )
+        )
+    );
 }
 
 function App() {
@@ -740,7 +968,7 @@ function App() {
             const [e, p, m] = await Promise.all([
                 loadKey(KEYS.equip, []),
                 loadKey(KEYS.postos, []),
-                loadKey(KEYS.mov, []),
+                loadKey(KEYS.mov, [])
             ]);
             setEquipamentos(e);
             setPostos(p);
@@ -758,17 +986,28 @@ function App() {
     const isAdmin = currentUser?.role === "admin";
 
     async function persistEquip(next) {
-        if (!canWrite) return notify("Seu perfil é somente consulta");
+        if (!canWrite) {
+            notify("Seu perfil é somente consulta");
+            return;
+        }
         setEquipamentos(next);
         await saveKey(KEYS.equip, next);
     }
+
     async function persistPostos(next) {
-        if (!canWrite) return notify("Seu perfil é somente consulta");
+        if (!canWrite) {
+            notify("Seu perfil é somente consulta");
+            return;
+        }
         setPostos(next);
         await saveKey(KEYS.postos, next);
     }
+
     async function persistMov(next) {
-        if (!canWrite) return notify("Seu perfil é somente consulta");
+        if (!canWrite) {
+            notify("Seu perfil é somente consulta");
+            return;
+        }
         setMovimentacoes(next);
         await saveKey(KEYS.mov, next);
     }
@@ -776,21 +1015,45 @@ function App() {
     function logout() {
         setAuthToken("");
         setCurrentUser(null);
-        setTab("dashboard");
         setEquipamentos([]);
         setPostos([]);
         setMovimentacoes([]);
+        setTab("dashboard");
     }
 
     if (authLoading) {
-        return React.createElement("div", { style: { minHeight: "80vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#5C7876", fontFamily: "Inter, system-ui, sans-serif" } }, "Carregando acesso…");
+        return React.createElement("div", {
+            style: {
+                minHeight: "80vh",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "#5C7876",
+                fontFamily: "Inter, system-ui, sans-serif"
+            }
+        }, "Carregando acesso…");
     }
 
     if (!currentUser) {
         return React.createElement(AuthScreen, { onAuthenticated: setCurrentUser });
     }
 
+    if (loading) {
+        return React.createElement(Shell, null,
+            React.createElement("div", {
+                style: {
+                    minHeight: 640,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color: "var(--text-secondary)"
+                }
+            }, "Carregando dados…")
+        );
+    }
+
     const postoNome = (id) => postos.find((p) => p.id === id)?.nome || "Sem posto";
+
     const nav = [
         { id: "dashboard", label: "Visão geral", icon: LayoutGrid, show: true },
         { id: "equipamentos", label: "Equipamentos", icon: Boxes, show: true },
@@ -799,53 +1062,175 @@ function App() {
         { id: "historico", label: "Histórico", icon: History, show: true },
         { id: "entregas", label: "Entregas", icon: Truck, show: true },
         { id: "importar", label: "Importar planilha", icon: Upload, show: canWrite },
-        { id: "usuarios", label: "Usuários", icon: Tag, show: isAdmin },
+        { id: "usuarios", label: "Usuários", icon: Tag, show: isAdmin }
     ].filter((n) => n.show);
 
-    if (loading) {
-        return React.createElement(Shell, null,
-            React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "center", height: "100%", minHeight: 640, color: "var(--text-secondary)", fontFamily: "var(--font-body)" } }, "Carregando dados…"));
-    }
+    const sidebar = React.createElement("aside", {
+        className: "app-sidebar",
+        style: {
+            width: 216,
+            flexShrink: 0,
+            background: "var(--surface)",
+            borderRight: "1px solid var(--border)",
+            padding: "20px 12px",
+            display: "flex",
+            flexDirection: "column",
+            gap: 4
+        }
+    },
+        React.createElement("div", {
+            className: "brand-row",
+            style: {
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "4px 10px 20px"
+            }
+        },
+            React.createElement("div", {
+                style: {
+                    width: 30,
+                    height: 30,
+                    borderRadius: 7,
+                    background: "var(--primary)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center"
+                }
+            }, React.createElement(Tag, { size: 16, color: "#fff", strokeWidth: 2.2 })),
+            React.createElement("div", {
+                style: {
+                    fontFamily: "var(--font-display)",
+                    fontWeight: 700,
+                    fontSize: 15
+                }
+            }, "PatrimôNet")
+        ),
+        nav.map((n) => {
+            const Icon = n.icon;
+            const active = tab === n.id;
+            return React.createElement("button", {
+                key: n.id,
+                className: "nav-btn",
+                onClick: () => setTab(n.id),
+                style: {
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    padding: "9px 12px",
+                    borderRadius: 8,
+                    border: "none",
+                    cursor: "pointer",
+                    background: active ? "var(--primary-soft)" : "transparent",
+                    color: active ? "var(--primary)" : "var(--text-secondary)",
+                    fontWeight: active ? 700 : 500,
+                    fontSize: 13.5,
+                    textAlign: "left"
+                }
+            },
+                React.createElement(Icon, { size: 16 }),
+                n.label
+            );
+        }),
+        React.createElement("div", {
+            className: "footer-info",
+            style: {
+                marginTop: "auto",
+                padding: "12px 10px 2px",
+                fontSize: 11.5,
+                color: "var(--text-secondary)",
+                lineHeight: 1.5
+            }
+        },
+            React.createElement("div", {
+                style: { fontWeight: 700, color: "var(--text-primary)" }
+            }, currentUser.nome),
+            React.createElement("div", null,
+                currentUser.role === "admin"
+                    ? "Administrador"
+                    : (currentUser.role === "operator" ? "Operador" : "Consulta")
+            ),
+            React.createElement("button", {
+                type: "button",
+                onClick: logout,
+                style: {
+                    marginTop: 8,
+                    background: "none",
+                    border: "none",
+                    padding: 0,
+                    color: "var(--danger)",
+                    fontSize: 11.5,
+                    fontWeight: 700,
+                    cursor: "pointer"
+                }
+            }, "Sair")
+        )
+    );
+
+    const content = React.createElement("main", {
+        className: "app-main",
+        style: {
+            flex: 1,
+            overflow: "auto",
+            padding: "28px 32px",
+            background: "var(--bg)"
+        }
+    },
+        tab === "dashboard" ? React.createElement(Dashboard, {
+            equipamentos, postos, movimentacoes, postoNome, setTab
+        }) : null,
+        tab === "equipamentos" ? React.createElement(EquipamentosView, {
+            equipamentos, postos, persistEquip, postoNome, notify
+        }) : null,
+        tab === "postos" ? React.createElement(PostosView, {
+            postos, equipamentos, persistPostos, notify
+        }) : null,
+        tab === "movimentar" && canWrite ? React.createElement(MovimentarView, {
+            equipamentos, postos, persistEquip, movimentacoes, persistMov, postoNome, notify
+        }) : null,
+        tab === "historico" ? React.createElement(HistoricoView, {
+            movimentacoes, equipamentos, postoNome
+        }) : null,
+        tab === "entregas" ? React.createElement(EntregasView, {
+            equipamentos, postoNome
+        }) : null,
+        tab === "importar" && canWrite ? React.createElement(ImportarView, {
+            equipamentos, postos, persistEquip, persistPostos, notify
+        }) : null,
+        tab === "usuarios" && isAdmin ? React.createElement(UsersView, {
+            notify, currentUser
+        }) : null
+    );
 
     return React.createElement(Shell, null,
-        React.createElement("div", { className: "app-body", style: { display: "flex", height: "100%", minHeight: 640 } },
-            React.createElement("aside", { className: "app-sidebar", style: {
-                width: 216, flexShrink: 0, background: "var(--surface)", borderRight: "1px solid var(--border)",
-                padding: "20px 12px", display: "flex", flexDirection: "column", gap: 4
-            } },
-                React.createElement("div", { className: "brand-row", style: { display: "flex", alignItems: "center", gap: 8, padding: "4px 10px 20px" } },
-                    React.createElement("div", { style: { width: 30, height: 30, borderRadius: 7, background: "var(--primary)", display: "flex", alignItems: "center", justifyContent: "center" } },
-                        React.createElement(Tag, { size: 16, color: "#fff", strokeWidth: 2.2 })),
-                    React.createElement("div", { style: { fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 15 } }, "PatrimôNet")),
-                nav.map((n) => {
-                    const Icon = n.icon;
-                    const active = tab === n.id;
-                    return React.createElement("button", { key: n.id, className: "nav-btn", onClick: () => setTab(n.id), style: {
-                        display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderRadius: 8, border: "none",
-                        cursor: "pointer", background: active ? "var(--primary-soft)" : "transparent",
-                        color: active ? "var(--primary)" : "var(--text-secondary)", fontWeight: active ? 700 : 500,
-                        fontSize: 13.5, textAlign: "left"
-                    } }, React.createElement(Icon, { size: 16 }), n.label);
-                }),
-                React.createElement("div", { className: "footer-info", style: { marginTop: "auto", padding: "12px 10px 2px", fontSize: 11.5, color: "var(--text-secondary)", lineHeight: 1.5 } },
-                    React.createElement("div", { style: { fontWeight: 700, color: "var(--text-primary)" } }, currentUser.nome),
-                    React.createElement("div", null, currentUser.role === "admin" ? "Administrador" : currentUser.role === "operator" ? "Operador" : "Consulta"),
-                    React.createElement("button", { onClick: logout, style: { marginTop: 8, background: "none", border: "none", padding: 0, color: "var(--danger)", fontSize: 11.5, fontWeight: 700, cursor: "pointer" } }, "Sair")),
-            React.createElement("main", { className: "app-main", style: { flex: 1, overflow: "auto", padding: "28px 32px", background: "var(--bg)" } },
-                tab === "dashboard" && React.createElement(Dashboard, { equipamentos, postos, movimentacoes, postoNome, setTab }),
-                tab === "equipamentos" && React.createElement(EquipamentosView, { equipamentos, postos, persistEquip, postoNome, notify }),
-                tab === "postos" && React.createElement(PostosView, { postos, equipamentos, persistPostos, notify }),
-                tab === "movimentar" && canWrite && React.createElement(MovimentarView, { equipamentos, postos, persistEquip, movimentacoes, persistMov, postoNome, notify }),
-                tab === "historico" && React.createElement(HistoricoView, { movimentacoes, equipamentos, postoNome }),
-                tab === "entregas" && React.createElement(EntregasView, { equipamentos, postoNome }),
-                tab === "importar" && canWrite && React.createElement(ImportarView, { equipamentos, postos, persistEquip, persistPostos, notify }),
-                tab === "usuarios" && isAdmin && React.createElement(UsersView, { notify, currentUser }))),
-        toast && React.createElement("div", { className: "toast-msg", style: {
-            position: "absolute", bottom: 20, left: "50%", transform: "translateX(-50%)",
-            background: "var(--text-primary)", color: "#fff", padding: "10px 18px", borderRadius: 8,
-            fontSize: 13, fontWeight: 500, boxShadow: "0 8px 24px rgba(0,0,0,0.18)", zIndex: 50
-        } }, toast));
+        React.createElement("div", {
+            className: "app-body",
+            style: {
+                display: "flex",
+                height: "100%",
+                minHeight: 640
+            }
+        }, sidebar, content),
+        toast ? React.createElement("div", {
+            className: "toast-msg",
+            style: {
+                position: "absolute",
+                bottom: 20,
+                left: "50%",
+                transform: "translateX(-50%)",
+                background: "var(--text-primary)",
+                color: "#fff",
+                padding: "10px 18px",
+                borderRadius: 8,
+                fontSize: 13,
+                fontWeight: 500,
+                boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
+                zIndex: 50
+            }
+        }, toast) : null
+    );
 }
+
 function Shell({ children }) {
     return (React.createElement("div", { className: "app-shell", style: {
             position: "relative",
