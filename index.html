@@ -2437,7 +2437,9 @@ function EquipamentosView({ equipamentos, postos, persistEquip, postoNome, notif
         });
         return map;
     }, [equipamentos]);
-    const postosFiltrados = postos.filter((p) => p.nome.toLowerCase().includes(buscaPosto.toLowerCase()));
+    const postosFiltrados = postos
+        .filter((p) => p.nome.toLowerCase().includes(buscaPosto.toLowerCase()))
+        .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR", { sensitivity: "base" }));
     const semPostoCount = contagemPorPosto["__sem_posto__"] || 0;
     const equipamentosDoPosto = useMemo(() => {
         if (postoFiltro === null)
@@ -2665,7 +2667,7 @@ function GroupEditModal({ grupo, postos, onClose, onSave }) {
                 React.createElement(Field, { label: "Posto atual" },
                     React.createElement("select", { style: inputStyle, value: postoAtualId || "", onChange: (e) => setPostoAtualId(e.target.value) },
                         React.createElement("option", { value: "" }, "Sem posto / em estoque"),
-                        postos.map((p) => (React.createElement("option", { key: p.id, value: p.id }, p.nome))))),
+                        [...postos].sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR", { sensitivity: "base" })).map((p) => (React.createElement("option", { key: p.id, value: p.id }, p.nome))))),
                 React.createElement(Field, { label: "Valor unit\u00E1rio (opcional)" },
                     React.createElement("input", { style: inputStyle, value: valor, onChange: (e) => setValor(e.target.value), placeholder: "Ex.: 89,90", inputMode: "decimal" }))),
             React.createElement(Field, { label: "Data de entrega no posto (opcional)" },
@@ -2762,7 +2764,7 @@ function EquipamentoModal({ initial, postos, onClose, onSave, prefillPostoId }) 
                 React.createElement(Field, { label: "Posto atual" },
                     React.createElement("select", { style: inputStyle, value: postoAtualId || "", onChange: (e) => setPostoAtualId(e.target.value) },
                         React.createElement("option", { value: "" }, "Sem posto / em estoque"),
-                        postos.map((p) => (React.createElement("option", { key: p.id, value: p.id }, p.nome))))),
+                        [...postos].sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR", { sensitivity: "base" })).map((p) => (React.createElement("option", { key: p.id, value: p.id }, p.nome))))),
                 React.createElement(Field, { label: "Valor de compra (opcional)" },
                     React.createElement("input", { style: inputStyle, value: valor, onChange: (e) => setValor(e.target.value), placeholder: "Ex.: 1250,00", inputMode: "decimal" }))),
             React.createElement(Field, { label: "Data de entrega no posto (opcional)" },
@@ -2777,12 +2779,16 @@ function EquipamentoModal({ initial, postos, onClose, onSave, prefillPostoId }) 
 // ---------- Postos ----------
 function PostosView({ postos, equipamentos, persistPostos, notify }) {
     const [modal, setModal] = useState(null);
+    const postosOrdenados = useMemo(
+        () => [...postos].sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR", { sensitivity: "base" })),
+        [postos]
+    );
     function countFor(id) {
         return equipamentos.filter((e) => e.postoAtualId === id).length;
     }
     async function handleSave(data) {
         if (data.id) {
-            await persistPostos(postos.map((p) => (p.id === data.id ? data : p)));
+            await persistPostos(postosOrdenados.map((p) => (p.id === data.id ? data : p)));
             notify("Posto atualizado");
         }
         else {
