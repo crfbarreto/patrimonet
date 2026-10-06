@@ -113,14 +113,56 @@ const makeIcon = (kind) => (props) => {
     return React.createElement(BaseIcon, { ...props }, paths[kind]);
 };
 const Boxes = makeIcon('boxes'), MapPin = makeIcon('pin'), ArrowLeftRight = makeIcon('swap'), History = makeIcon('history'), Plus = makeIcon('plus'), X = makeIcon('x'), Search = makeIcon('search'), Trash2 = makeIcon('trash'), Pencil = makeIcon('pencil'), Tag = makeIcon('tag'), CheckCircle2 = makeIcon('check'), AlertTriangle = makeIcon('alert'), Wrench = makeIcon('wrench'), LayoutGrid = makeIcon('grid'), ChevronRight = makeIcon('chevron'), Package = makeIcon('package'), Upload = makeIcon('upload'), FileSpreadsheet = makeIcon('file'), ArrowLeft = makeIcon('left'), ArrowRight = makeIcon('right'), Printer = makeIcon('printer'), Minus = makeIcon('minus'), Download = makeIcon('download'), Truck = makeIcon('truck');
-// Compatibilidade com o armazenamento do artefato original.
+// Armazenamento híbrido: PostgreSQL via API, com fallback local.
+const PATRIMONET_API = "https://patrimonet-api.onrender.com";
+
+async function apiGet(key) {
+    const res = await fetch(`${PATRIMONET_API}/api/storage/${encodeURIComponent(key)}`);
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error("API indisponível");
+    const data = await res.json();
+    return data.found ? data.value : null;
+}
+
+async function apiSet(key, value) {
+    const res = await fetch(`${PATRIMONET_API}/api/storage/${encodeURIComponent(key)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ value })
+    });
+    if (!res.ok) throw new Error("API indisponível");
+    return true;
+}
+
 window.storage = {
     async get(key) {
-        const value = localStorage.getItem('patrimonet:' + key);
-        return value === null ? null : { value };
+        const localKey = 'patrimonet:' + key;
+        const localValue = localStorage.getItem(localKey);
+        try {
+            const remoteValue = await apiGet(key);
+            if (remoteValue !== null) {
+                localStorage.setItem(localKey, remoteValue);
+                return { value: remoteValue };
+            }
+            // Banco vazio: migra automaticamente o que já existe neste navegador.
+            if (localValue !== null) {
+                await apiSet(key, localValue);
+                return { value: localValue };
+            }
+            return null;
+        } catch (e) {
+            // Enquanto a API/banco não estiver disponível, continua funcionando localmente.
+            return localValue === null ? null : { value: localValue };
+        }
     },
     async set(key, value) {
-        localStorage.setItem('patrimonet:' + key, value);
+        const localKey = 'patrimonet:' + key;
+        localStorage.setItem(localKey, value);
+        try {
+            await apiSet(key, value);
+        } catch (e) {
+            console.warn("Dados salvos localmente; sincronização com banco pendente.", e);
+        }
         return true;
     }
 };
