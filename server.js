@@ -153,20 +153,39 @@ async function auditStorageChange(user, key, oldValue, newValue) {
   for (const [id, item] of newMap) {
     const previous = oldMap.get(id);
     if (!previous) {
-      await addAudit({
-        user,
-        entityType: key,
-        entityId: id,
-        entityLabel: entityLabelFor(key, item),
-        action: key === "movimentacoes" ? "MOVE" : "CREATE",
-        after: item
-      });
+      if (key === "movimentacoes") {
+        const qtd = Number(item.quantidade) || 1;
+        const labelBase = item.equipamentoNome || item.nome || "Equipamento";
+        await addAudit({
+          user,
+          entityType: "movimentacoes",
+          entityId: id,
+          entityLabel: qtd > 1 ? `${labelBase} (${qtd} unidades)` : labelBase,
+          action: "MOVE",
+          field: "Posto",
+          before: item.postoOrigemNome || "Estoque / sem posto",
+          after: item.postoDestinoNome || "—",
+          metadata: item
+        });
+      } else {
+        await addAudit({
+          user,
+          entityType: key,
+          entityId: id,
+          entityLabel: entityLabelFor(key, item),
+          action: "CREATE",
+          after: item
+        });
+      }
       continue;
     }
 
     const fields = new Set([...Object.keys(previous), ...Object.keys(item)]);
     for (const field of fields) {
       if (auditIgnoredFields.has(field)) continue;
+      // Mudanças de posto geradas pela tela de movimentação já são registradas
+      // pelo objeto de movimentação com origem/destino legíveis.
+      if (key === "equipamentos" && field === "postoAtualId") continue;
       const before = previous[field];
       const after = item[field];
       if (JSON.stringify(before) !== JSON.stringify(after)) {
@@ -195,6 +214,71 @@ async function auditStorageChange(user, key, oldValue, newValue) {
         before: item
       });
     }
+  }
+}
+
+async function normalizeExistingMovementAudits() {
+  try {
+    // Converte os registros antigos de movimentação, que guardavam o objeto inteiro
+    // em "Depois", para o formato legível Campo=Posto / Antes=origem / Depois=destino.
+    const moves = await pool.query(`
+      SELECT id, user_id, user_name, entity_label, after_value, created_at
+      FROM audit_logs
+      WHERE action = 'MOVE'
+        AND entity_type = 'movimentacoes'
+        AND (field_name IS NULL OR field_name <> 'Posto')
+      ORDER BY id
+    `);
+
+    for (const row of moves.rows) {
+      let data = null;
+      try { data = JSON.parse(row.after_value || ""); } catch {}
+      if (!data || typeof data !== "object") continue;
+
+      const qtd = Number(data.quantidade) || 1;
+      const baseLabel = data.equipamentoNome || row.entity_label || "Equipamento";
+      const label = qtd > 1 ? `${baseLabel} (${qtd} unidades)` : baseLabel;
+      const origem = data.postoOrigemNome || "Estoque / sem posto";
+      const destino = data.postoDestinoNome || "—";
+
+      await pool.query(
+        `UPDATE audit_logs
+         SET entity_label = $1,
+             field_name = 'Posto',
+             before_value = $2,
+             after_value = $3,
+             metadata = $4::jsonb
+         WHERE id = $5`,
+        [label, origem, destino, JSON.stringify(data), row.id]
+      );
+
+      // Remove os registros duplicados antigos de postoAtualId gerados segundos antes/depois
+      // para o mesmo usuário e equipamento.
+      await pool.query(
+        `DELETE FROM audit_logs
+         WHERE action = 'UPDATE'
+           AND entity_type = 'equipamentos'
+           AND field_name = 'postoAtualId'
+           AND user_name = $1
+           AND entity_label = $2
+           AND created_at BETWEEN ($3::timestamptz - interval '90 seconds')
+                              AND ($3::timestamptz + interval '90 seconds')`,
+        [row.user_name, baseLabel, row.created_at]
+      );
+    }
+
+    // Se sobrou alguma troca de posto antiga sem um registro de movimentação correspondente,
+    // ela continua sendo tratada semanticamente como movimentação.
+    await pool.query(`
+      UPDATE audit_logs
+      SET action = 'MOVE',
+          field_name = 'Posto'
+      WHERE entity_type = 'equipamentos'
+        AND action = 'UPDATE'
+        AND field_name = 'postoAtualId'
+    `);
+  } catch (error) {
+    console.error("Falha ao normalizar auditoria de movimentações:", error);
   }
 }
 
@@ -244,6 +328,8 @@ async function init() {
 
   await pool.query("CREATE INDEX IF NOT EXISTS audit_logs_created_at_idx ON audit_logs(created_at DESC)");
   await pool.query("CREATE INDEX IF NOT EXISTS audit_logs_entity_idx ON audit_logs(entity_type, entity_id)");
+
+  await normalizeExistingMovementAudits();
 
   console.log("Banco inicializado.");
 
