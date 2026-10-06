@@ -1737,12 +1737,8 @@ function StatusPill({ status }) {
 }
 // ---------- Dashboard ----------
 function Dashboard({ equipamentos, postos, movimentacoes, postoNome, setTab }) {
-    const semPatrimonio = equipamentos.filter((e) => !e.patrimonio).length;
     const manutencao = equipamentos.filter((e) => e.status === "manutencao").length;
-    const baixados = equipamentos.filter((e) => e.status === "baixa").length;
-    const ativos = equipamentos.length - manutencao - baixados;
     const valorTotal = equipamentos.reduce((s, e) => s + (Number(e.valor) || 0), 0);
-    const coberturaPatrimonio = equipamentos.length ? Math.round(((equipamentos.length - semPatrimonio) / equipamentos.length) * 100) : 0;
     const recentes = [...movimentacoes].sort((a, b) => (a.data < b.data ? 1 : -1)).slice(0, 6);
 
     const porPosto = useMemo(() => {
@@ -1776,87 +1772,536 @@ function Dashboard({ equipamentos, postos, movimentacoes, postoNome, setTab }) {
         return Array.from(map.values()).sort((a, b) => b.count - a.count);
     }, [equipamentos]);
 
-    const cards = [
-        { label: "Equipamentos", value: equipamentos.length.toLocaleString("pt-BR"), note: `${rankingTipos.length} tipos distintos`, icon: Boxes },
-        { label: "Valor cadastrado", value: valorTotal.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 }), note: "Soma dos valores informados", icon: Tag },
-        { label: "Postos", value: postos.length, note: `${porPosto.filter(x => x.count > 0).length} com equipamentos`, icon: MapPin },
-        { label: "Em manutenção", value: manutencao, note: manutencao ? "Requer acompanhamento" : "Nenhuma pendência", icon: Wrench },
-    ];
+    const topEquipamentosValor = useMemo(() => {
+        const map = new Map();
 
-    const totalStatus = Math.max(equipamentos.length, 1);
-    const statusRows = [
-        { label: "Ativos", count: ativos, color: "var(--success)" },
-        { label: "Em manutenção", count: manutencao, color: "var(--warn)" },
-        { label: "Baixados", count: baixados, color: "var(--danger)" },
+        equipamentos.forEach((e) => {
+            const valor = Number(e.valor) || 0;
+            const nome = String(e.nome || "").trim();
+
+            if (!nome || valor < 500) return;
+
+            const key = normalize(nome) + "|" + valor.toFixed(2);
+
+            if (!map.has(key)) {
+                map.set(key, {
+                    nome,
+                    valorUnitario: valor,
+                    quantidade: 0,
+                    valorTotal: 0
+                });
+            }
+
+            const item = map.get(key);
+            item.quantidade += 1;
+            item.valorTotal += valor;
+        });
+
+        return Array.from(map.values())
+            .sort((a, b) => b.quantidade - a.quantidade || b.valorTotal - a.valorTotal)
+            .slice(0, 5);
+    }, [equipamentos]);
+
+    const cards = [
+        {
+            label: "Equipamentos",
+            value: equipamentos.length.toLocaleString("pt-BR"),
+            note: rankingTipos.length + " tipos distintos",
+            icon: Boxes
+        },
+        {
+            label: "Valor cadastrado",
+            value: valorTotal.toLocaleString("pt-BR", {
+                style: "currency",
+                currency: "BRL",
+                maximumFractionDigits: 0
+            }),
+            note: "Soma dos valores informados",
+            icon: Tag
+        },
+        {
+            label: "Postos",
+            value: postos.length,
+            note: porPosto.filter((x) => x.count > 0).length + " com equipamentos",
+            icon: MapPin
+        },
+        {
+            label: "Em manutenção",
+            value: manutencao,
+            note: manutencao ? "Requer acompanhamento" : "Nenhuma pendência",
+            icon: Wrench
+        }
     ];
 
     return React.createElement("div", null,
-        React.createElement(SectionHeader, { title: "Visão geral", subtitle: "Indicadores gerenciais do patrimônio e da operação" }),
+        React.createElement(SectionHeader, {
+            title: "Visão geral",
+            subtitle: "Indicadores gerenciais do patrimônio e da operação"
+        }),
 
-        React.createElement("div", { className: "grid-4", style: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14, marginBottom: 18 } },
-            cards.map((c) => React.createElement("div", { key: c.label, style: { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 17 } },
-                React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } },
-                    React.createElement("div", { style: { fontSize: 12, color: "var(--text-secondary)", fontWeight: 600 } }, c.label),
-                    React.createElement(c.icon, { size: 17, color: "var(--primary)" })),
-                React.createElement("div", { style: { fontFamily: "var(--font-display)", fontSize: 25, fontWeight: 700, marginTop: 8, color: "var(--text-primary)" } }, c.value),
-                React.createElement("div", { style: { fontSize: 11.5, color: "var(--text-tertiary)", marginTop: 4 } }, c.note)))),
+        React.createElement("div", {
+            className: "grid-4",
+            style: {
+                display: "grid",
+                gridTemplateColumns: "repeat(4, 1fr)",
+                gap: 14,
+                marginBottom: 18
+            }
+        },
+            cards.map((card) =>
+                React.createElement("div", {
+                    key: card.label,
+                    style: {
+                        background: "var(--surface)",
+                        border: "1px solid var(--border)",
+                        borderRadius: 12,
+                        padding: 17
+                    }
+                },
+                    React.createElement("div", {
+                        style: {
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center"
+                        }
+                    },
+                        React.createElement("div", {
+                            style: {
+                                fontSize: 12,
+                                color: "var(--text-secondary)",
+                                fontWeight: 600
+                            }
+                        }, card.label),
+                        React.createElement(card.icon, {
+                            size: 17,
+                            color: "var(--primary)"
+                        })
+                    ),
+                    React.createElement("div", {
+                        style: {
+                            fontFamily: "var(--font-display)",
+                            fontSize: 25,
+                            fontWeight: 700,
+                            marginTop: 8,
+                            color: "var(--text-primary)"
+                        }
+                    }, card.value),
+                    React.createElement("div", {
+                        style: {
+                            fontSize: 11.5,
+                            color: "var(--text-tertiary)",
+                            marginTop: 4
+                        }
+                    }, card.note)
+                )
+            )
+        ),
 
-        React.createElement("div", { className: "grid-2", style: { display: "grid", gridTemplateColumns: "1.05fr .95fr", gap: 18, marginBottom: 18 } },
-            React.createElement("div", { style: { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 18 } },
-                React.createElement("div", { style: { display: "flex", justifyContent: "space-between", marginBottom: 16 } },
+        React.createElement("div", {
+            className: "grid-2",
+            style: {
+                display: "grid",
+                gridTemplateColumns: "1.05fr .95fr",
+                gap: 18,
+                marginBottom: 18
+            }
+        },
+
+            React.createElement("div", {
+                style: {
+                    background: "var(--surface)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 12,
+                    padding: 18
+                }
+            },
+                React.createElement("div", {
+                    style: {
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "flex-start",
+                        gap: 12,
+                        marginBottom: 16
+                    }
+                },
                     React.createElement("div", null,
-                        React.createElement("h3", { style: { margin: 0, fontSize: 14.5 } }, "Situação do parque"),
-                        React.createElement("div", { style: { fontSize: 11.5, color: "var(--text-secondary)", marginTop: 3 } }, "Distribuição por status")),
-                    React.createElement("div", { style: { textAlign: "right" } },
-                        React.createElement("div", { style: { fontWeight: 800, color: "var(--primary)", fontSize: 18 } }, coberturaPatrimonio, "%"),
-                        React.createElement("div", { style: { fontSize: 10.5, color: "var(--text-tertiary)" } }, "com patrimônio"))),
-                statusRows.map((s) => React.createElement("div", { key: s.label, style: { marginBottom: 13 } },
-                    React.createElement("div", { style: { display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 5 } },
-                        React.createElement("span", { style: { fontWeight: 600 } }, s.label),
-                        React.createElement("span", { style: { color: "var(--text-secondary)" } }, s.count)),
-                    React.createElement("div", { style: { height: 8, background: "var(--hover)", borderRadius: 20, overflow: "hidden" } },
-                        React.createElement("div", { style: { width: `${Math.max((s.count / totalStatus) * 100, s.count ? 2 : 0)}%`, height: "100%", background: s.color, borderRadius: 20 } })))),
-                semPatrimonio > 0 && React.createElement("div", { style: { marginTop: 8, padding: "9px 11px", background: "var(--warn-bg)", borderRadius: 8, fontSize: 12, color: "#8A5D14" } },
-                    semPatrimonio.toLocaleString("pt-BR"), " equipamento", semPatrimonio !== 1 ? "s" : "", " sem número de patrimônio.")),
+                        React.createElement("h3", {
+                            style: { margin: 0, fontSize: 14.5 }
+                        }, "Top 5 equipamentos ≥ R$ 500"),
+                        React.createElement("div", {
+                            style: {
+                                fontSize: 11.5,
+                                color: "var(--text-secondary)",
+                                marginTop: 3
+                            }
+                        }, "Maiores quantidades entre equipamentos com valor unitário a partir de R$ 500")
+                    ),
+                    React.createElement("div", {
+                        style: {
+                            background: "var(--primary-soft)",
+                            color: "var(--primary-dark)",
+                            borderRadius: 20,
+                            padding: "5px 9px",
+                            fontSize: 10.5,
+                            fontWeight: 800,
+                            whiteSpace: "nowrap"
+                        }
+                    }, "TOP 5")
+                ),
 
-            React.createElement("div", { style: { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 18 } },
-                React.createElement("div", { style: { marginBottom: 14 } },
-                    React.createElement("h3", { style: { margin: 0, fontSize: 14.5 } }, "Postos com maior valor alocado"),
-                    React.createElement("div", { style: { marginTop: 3, fontSize: 11.5, color: "var(--text-secondary)" } }, "Ranking pelo valor total dos equipamentos em cada posto")),
-                porPosto.length === 0 ? React.createElement(EmptyState, { icon: MapPin, title: "Nenhum posto cadastrado" }) :
-                porPosto.slice(0, 6).map(({ posto, count, value }, i) => {
-                    const maxValue = Math.max(porPosto[0]?.value || 1, 1);
-                    return React.createElement("div", { key: posto.id, style: { marginBottom: 13 } },
-                        React.createElement("div", { style: { display: "flex", justifyContent: "space-between", gap: 12, fontSize: 12.2, marginBottom: 4 } },
-                            React.createElement("div", { style: { minWidth: 0 } },
-                                React.createElement("span", { style: { fontWeight: 700 } }, i + 1, ". ", posto.nome),
-                                React.createElement("div", { style: { marginTop: 2, fontSize: 10.8, color: "var(--text-tertiary)" } },
-                                    count, " equipamento", count !== 1 ? "s" : "")),
-                            React.createElement("span", { style: { color: "var(--primary)", fontWeight: 700, whiteSpace: "nowrap" } }, fmtMoeda(value))),
-                        React.createElement("div", { style: { height: 7, background: "var(--hover)", borderRadius: 20, overflow: "hidden" } },
-                            React.createElement("div", { style: { width: `${Math.max((value / maxValue) * 100, value ? 2 : 0)}%`, height: "100%", background: "var(--primary)", borderRadius: 20 } })));
-                }))),
+                topEquipamentosValor.length === 0
+                    ? React.createElement(EmptyState, {
+                        icon: Boxes,
+                        title: "Nenhum equipamento acima de R$ 500"
+                    })
+                    : React.createElement("div", null,
+                        topEquipamentosValor.map((item, index) => {
+                            const maxQtd = Math.max(topEquipamentosValor[0]?.quantidade || 1, 1);
+                            const largura = Math.max((item.quantidade / maxQtd) * 100, 3);
 
-        React.createElement("div", { className: "grid-2", style: { display: "grid", gridTemplateColumns: "1.1fr .9fr", gap: 18 } },
-            React.createElement("div", { style: { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 18 } },
-                React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 } },
-                    React.createElement("h3", { style: { margin: 0, fontSize: 14.5 } }, "Últimas movimentações"),
-                    React.createElement("button", { onClick: () => setTab("historico"), style: { border: "none", background: "none", color: "var(--primary)", fontWeight: 700, cursor: "pointer", fontSize: 12 } }, "Ver histórico")),
-                recentes.length === 0 ? React.createElement(EmptyState, { icon: ArrowLeftRight, title: "Nenhuma movimentação ainda" }) :
-                recentes.map((m) => React.createElement("div", { key: m.id, style: { display: "flex", justifyContent: "space-between", gap: 10, padding: "9px 0", borderBottom: "1px solid var(--border)", fontSize: 12.3 } },
-                    React.createElement("div", null,
-                        React.createElement("div", { style: { fontWeight: 700 } }, m.equipamentoNome || "Equipamento"),
-                        React.createElement("div", { style: { color: "var(--text-secondary)", marginTop: 2 } }, (m.postoOrigemNome || "—"), " → ", (m.postoDestinoNome || "—"))),
-                    React.createElement("div", { style: { color: "var(--text-tertiary)", whiteSpace: "nowrap" } }, fmtDate(m.data))))),
+                            return React.createElement("div", {
+                                key: normalize(item.nome) + "-" + item.valorUnitario,
+                                style: {
+                                    display: "grid",
+                                    gridTemplateColumns: "34px 1fr 52px",
+                                    gap: 10,
+                                    alignItems: "center",
+                                    padding: "9px 0",
+                                    borderBottom: index < topEquipamentosValor.length - 1
+                                        ? "1px solid var(--border)"
+                                        : "none"
+                                }
+                            },
+                                React.createElement("div", {
+                                    style: {
+                                        width: 28,
+                                        height: 28,
+                                        borderRadius: 8,
+                                        display: "flex",
+                                        alignItems: "center",
+                                        justifyContent: "center",
+                                        background: index === 0 ? "var(--primary)" : "var(--primary-soft)",
+                                        color: index === 0 ? "#fff" : "var(--primary-dark)",
+                                        fontWeight: 800,
+                                        fontSize: 12
+                                    }
+                                }, index + 1),
 
-            React.createElement("div", { style: { background: "linear-gradient(135deg, var(--primary-dark), var(--primary))", color: "#fff", borderRadius: 12, padding: 20 } },
-                React.createElement("div", { style: { fontSize: 12, color: "#DCEEEC", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".04em" } }, "Resumo executivo"),
-                React.createElement("div", { style: { fontSize: 30, fontWeight: 800, marginTop: 14 } }, equipamentos.length.toLocaleString("pt-BR")),
-                React.createElement("div", { style: { color: "#DCEEEC", fontSize: 13, marginTop: 2 } }, "unidades controladas em ", postos.length, " postos"),
-                React.createElement("div", { style: { marginTop: 18, display: "grid", gap: 9, fontSize: 12.5 } },
-                    React.createElement("div", { style: { display: "flex", justifyContent: "space-between" } }, React.createElement("span", null, "Valor cadastrado"), React.createElement("strong", null, fmtMoeda(valorTotal))),
-                    React.createElement("div", { style: { display: "flex", justifyContent: "space-between" } }, React.createElement("span", null, "Em manutenção"), React.createElement("strong", null, manutencao)),
-                    React.createElement("div", { style: { display: "flex", justifyContent: "space-between" } }, React.createElement("span", null, "Movimentações registradas"), React.createElement("strong", null, movimentacoes.length))))));
+                                React.createElement("div", {
+                                    style: { minWidth: 0 }
+                                },
+                                    React.createElement("div", {
+                                        style: {
+                                            display: "flex",
+                                            justifyContent: "space-between",
+                                            gap: 10,
+                                            alignItems: "baseline",
+                                            marginBottom: 4
+                                        }
+                                    },
+                                        React.createElement("span", {
+                                            style: {
+                                                fontWeight: 700,
+                                                fontSize: 12.5,
+                                                color: "var(--text-primary)",
+                                                overflow: "hidden",
+                                                textOverflow: "ellipsis",
+                                                whiteSpace: "nowrap"
+                                            }
+                                        }, item.nome),
+                                        React.createElement("span", {
+                                            style: {
+                                                fontSize: 10.8,
+                                                color: "var(--text-secondary)",
+                                                whiteSpace: "nowrap"
+                                            }
+                                        }, fmtMoeda(item.valorUnitario), "/un.")
+                                    ),
+
+                                    React.createElement("div", {
+                                        style: {
+                                            height: 6,
+                                            background: "var(--hover)",
+                                            borderRadius: 20,
+                                            overflow: "hidden"
+                                        }
+                                    },
+                                        React.createElement("div", {
+                                            style: {
+                                                width: largura + "%",
+                                                height: "100%",
+                                                background: "var(--primary)",
+                                                borderRadius: 20
+                                            }
+                                        })
+                                    ),
+
+                                    React.createElement("div", {
+                                        style: {
+                                            marginTop: 4,
+                                            fontSize: 10.8,
+                                            color: "var(--text-tertiary)"
+                                        }
+                                    }, "Total do grupo: ", fmtMoeda(item.valorTotal))
+                                ),
+
+                                React.createElement("div", {
+                                    style: {
+                                        minWidth: 46,
+                                        height: 34,
+                                        borderRadius: 9,
+                                        background: "var(--hover)",
+                                        display: "flex",
+                                        alignItems: "center",
+                                        justifyContent: "center",
+                                        fontWeight: 800,
+                                        color: "var(--primary-dark)",
+                                        fontSize: 13
+                                    }
+                                }, item.quantidade)
+                            );
+                        })
+                    )
+            ),
+
+            React.createElement("div", {
+                style: {
+                    background: "var(--surface)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 12,
+                    padding: 18
+                }
+            },
+                React.createElement("div", {
+                    style: { marginBottom: 14 }
+                },
+                    React.createElement("h3", {
+                        style: { margin: 0, fontSize: 14.5 }
+                    }, "Postos com maior valor alocado"),
+                    React.createElement("div", {
+                        style: {
+                            marginTop: 3,
+                            fontSize: 11.5,
+                            color: "var(--text-secondary)"
+                        }
+                    }, "Ranking pelo valor total dos equipamentos em cada posto")
+                ),
+
+                porPosto.length === 0
+                    ? React.createElement(EmptyState, {
+                        icon: MapPin,
+                        title: "Nenhum posto cadastrado"
+                    })
+                    : porPosto.slice(0, 6).map(({ posto, count, value }, i) => {
+                        const maxValue = Math.max(porPosto[0]?.value || 1, 1);
+
+                        return React.createElement("div", {
+                            key: posto.id,
+                            style: { marginBottom: 13 }
+                        },
+                            React.createElement("div", {
+                                style: {
+                                    display: "flex",
+                                    justifyContent: "space-between",
+                                    gap: 12,
+                                    fontSize: 12.2,
+                                    marginBottom: 4
+                                }
+                            },
+                                React.createElement("div", {
+                                    style: { minWidth: 0 }
+                                },
+                                    React.createElement("span", {
+                                        style: { fontWeight: 700 }
+                                    }, i + 1, ". ", posto.nome),
+                                    React.createElement("div", {
+                                        style: {
+                                            marginTop: 2,
+                                            fontSize: 10.8,
+                                            color: "var(--text-tertiary)"
+                                        }
+                                    }, count, " equipamento", count !== 1 ? "s" : "")
+                                ),
+                                React.createElement("span", {
+                                    style: {
+                                        color: "var(--primary)",
+                                        fontWeight: 700,
+                                        whiteSpace: "nowrap"
+                                    }
+                                }, fmtMoeda(value))
+                            ),
+
+                            React.createElement("div", {
+                                style: {
+                                    height: 7,
+                                    background: "var(--hover)",
+                                    borderRadius: 20,
+                                    overflow: "hidden"
+                                }
+                            },
+                                React.createElement("div", {
+                                    style: {
+                                        width: Math.max((value / maxValue) * 100, value ? 2 : 0) + "%",
+                                        height: "100%",
+                                        background: "var(--primary)",
+                                        borderRadius: 20
+                                    }
+                                })
+                            )
+                        );
+                    })
+            )
+        ),
+
+        React.createElement("div", {
+            className: "grid-2",
+            style: {
+                display: "grid",
+                gridTemplateColumns: "1.1fr .9fr",
+                gap: 18
+            }
+        },
+
+            React.createElement("div", {
+                style: {
+                    background: "var(--surface)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 12,
+                    padding: 18
+                }
+            },
+                React.createElement("div", {
+                    style: {
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        marginBottom: 14
+                    }
+                },
+                    React.createElement("h3", {
+                        style: { margin: 0, fontSize: 14.5 }
+                    }, "Últimas movimentações"),
+                    React.createElement("button", {
+                        onClick: () => setTab("historico"),
+                        style: {
+                            border: "none",
+                            background: "none",
+                            color: "var(--primary)",
+                            fontWeight: 700,
+                            cursor: "pointer",
+                            fontSize: 12
+                        }
+                    }, "Ver histórico")
+                ),
+
+                recentes.length === 0
+                    ? React.createElement(EmptyState, {
+                        icon: ArrowLeftRight,
+                        title: "Nenhuma movimentação ainda"
+                    })
+                    : recentes.map((m) =>
+                        React.createElement("div", {
+                            key: m.id,
+                            style: {
+                                display: "flex",
+                                justifyContent: "space-between",
+                                gap: 10,
+                                padding: "9px 0",
+                                borderBottom: "1px solid var(--border)",
+                                fontSize: 12.3
+                            }
+                        },
+                            React.createElement("div", null,
+                                React.createElement("div", {
+                                    style: { fontWeight: 700 }
+                                }, m.equipamentoNome || "Equipamento"),
+                                React.createElement("div", {
+                                    style: {
+                                        color: "var(--text-secondary)",
+                                        marginTop: 2
+                                    }
+                                }, m.postoOrigemNome || "—", " → ", m.postoDestinoNome || "—")
+                            ),
+                            React.createElement("div", {
+                                style: {
+                                    color: "var(--text-tertiary)",
+                                    whiteSpace: "nowrap"
+                                }
+                            }, fmtDate(m.data))
+                        )
+                    )
+            ),
+
+            React.createElement("div", {
+                style: {
+                    background: "linear-gradient(135deg, var(--primary-dark), var(--primary))",
+                    color: "#fff",
+                    borderRadius: 12,
+                    padding: 20
+                }
+            },
+                React.createElement("div", {
+                    style: {
+                        fontSize: 12,
+                        color: "#DCEEEC",
+                        fontWeight: 700,
+                        textTransform: "uppercase",
+                        letterSpacing: ".04em"
+                    }
+                }, "Resumo executivo"),
+                React.createElement("div", {
+                    style: {
+                        fontSize: 30,
+                        fontWeight: 800,
+                        marginTop: 14
+                    }
+                }, equipamentos.length.toLocaleString("pt-BR")),
+                React.createElement("div", {
+                    style: {
+                        color: "#DCEEEC",
+                        fontSize: 13,
+                        marginTop: 2
+                    }
+                }, "unidades controladas em ", postos.length, " postos"),
+                React.createElement("div", {
+                    style: {
+                        marginTop: 18,
+                        display: "grid",
+                        gap: 9,
+                        fontSize: 12.5
+                    }
+                },
+                    React.createElement("div", {
+                        style: {
+                            display: "flex",
+                            justifyContent: "space-between"
+                        }
+                    },
+                        React.createElement("span", null, "Valor cadastrado"),
+                        React.createElement("strong", null, fmtMoeda(valorTotal))
+                    ),
+                    React.createElement("div", {
+                        style: {
+                            display: "flex",
+                            justifyContent: "space-between"
+                        }
+                    },
+                        React.createElement("span", null, "Em manutenção"),
+                        React.createElement("strong", null, manutencao)
+                    ),
+                    React.createElement("div", {
+                        style: {
+                            display: "flex",
+                            justifyContent: "space-between"
+                        }
+                    },
+                        React.createElement("span", null, "Movimentações registradas"),
+                        React.createElement("strong", null, movimentacoes.length)
+                    )
+                )
+            )
+        )
+    );
 }
 // ---------- Equipamentos ----------
 function EquipamentosView({ equipamentos, postos, persistEquip, postoNome, notify }) {
