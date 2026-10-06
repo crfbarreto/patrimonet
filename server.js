@@ -75,6 +75,129 @@ function requireRole(...roles) {
   };
 }
 
+function stringifyAuditValue(value) {
+  if (value === undefined) return null;
+  if (value === null) return null;
+  if (typeof value === "string") return value;
+  try { return JSON.stringify(value); } catch { return String(value); }
+}
+
+async function addAudit({
+  user,
+  entityType,
+  entityId = null,
+  entityLabel = null,
+  action,
+  field = null,
+  before = null,
+  after = null,
+  metadata = null
+}) {
+  await pool.query(
+    `INSERT INTO audit_logs
+      (user_id, user_name, user_email, entity_type, entity_id, entity_label, action, field_name, before_value, after_value, metadata)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+    [
+      user?.id || null,
+      user?.nome || "Sistema",
+      user?.email || null,
+      entityType,
+      entityId != null ? String(entityId) : null,
+      entityLabel,
+      action,
+      field,
+      stringifyAuditValue(before),
+      stringifyAuditValue(after),
+      metadata ? JSON.stringify(metadata) : null
+    ]
+  );
+}
+
+function entityLabelFor(storageKey, item) {
+  if (!item) return null;
+  if (storageKey === "equipamentos") {
+    return item.patrimonio ? `${item.nome || "Equipamento"} · ${item.patrimonio}` : (item.nome || "Equipamento");
+  }
+  if (storageKey === "postos") return item.nome || "Posto";
+  if (storageKey === "movimentacoes") {
+    return item.equipamentoNome || item.nome || "Movimentação";
+  }
+  return item.nome || item.id || storageKey;
+}
+
+const auditIgnoredFields = new Set(["id"]);
+
+async function auditStorageChange(user, key, oldValue, newValue) {
+  let oldData;
+  let newData;
+  try { oldData = oldValue ? JSON.parse(oldValue) : []; } catch { oldData = []; }
+  try { newData = newValue ? JSON.parse(newValue) : []; } catch { newData = []; }
+
+  if (!Array.isArray(oldData) || !Array.isArray(newData)) {
+    if (oldValue !== newValue) {
+      await addAudit({
+        user,
+        entityType: key,
+        action: "UPDATE",
+        field: "conteudo",
+        before: oldValue,
+        after: newValue
+      });
+    }
+    return;
+  }
+
+  const oldMap = new Map(oldData.filter(x => x && x.id != null).map(x => [String(x.id), x]));
+  const newMap = new Map(newData.filter(x => x && x.id != null).map(x => [String(x.id), x]));
+
+  for (const [id, item] of newMap) {
+    const previous = oldMap.get(id);
+    if (!previous) {
+      await addAudit({
+        user,
+        entityType: key,
+        entityId: id,
+        entityLabel: entityLabelFor(key, item),
+        action: key === "movimentacoes" ? "MOVE" : "CREATE",
+        after: item
+      });
+      continue;
+    }
+
+    const fields = new Set([...Object.keys(previous), ...Object.keys(item)]);
+    for (const field of fields) {
+      if (auditIgnoredFields.has(field)) continue;
+      const before = previous[field];
+      const after = item[field];
+      if (JSON.stringify(before) !== JSON.stringify(after)) {
+        await addAudit({
+          user,
+          entityType: key,
+          entityId: id,
+          entityLabel: entityLabelFor(key, item),
+          action: "UPDATE",
+          field,
+          before,
+          after
+        });
+      }
+    }
+  }
+
+  for (const [id, item] of oldMap) {
+    if (!newMap.has(id)) {
+      await addAudit({
+        user,
+        entityType: key,
+        entityId: id,
+        entityLabel: entityLabelFor(key, item),
+        action: "DELETE",
+        before: item
+      });
+    }
+  }
+}
+
 async function init() {
   if (!process.env.DATABASE_URL) {
     console.warn("DATABASE_URL ainda não configurada.");
@@ -100,6 +223,27 @@ async function init() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS audit_logs (
+      id BIGSERIAL PRIMARY KEY,
+      user_id BIGINT NULL,
+      user_name TEXT NOT NULL,
+      user_email TEXT NULL,
+      entity_type TEXT NOT NULL,
+      entity_id TEXT NULL,
+      entity_label TEXT NULL,
+      action TEXT NOT NULL,
+      field_name TEXT NULL,
+      before_value TEXT NULL,
+      after_value TEXT NULL,
+      metadata JSONB NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  await pool.query("CREATE INDEX IF NOT EXISTS audit_logs_created_at_idx ON audit_logs(created_at DESC)");
+  await pool.query("CREATE INDEX IF NOT EXISTS audit_logs_entity_idx ON audit_logs(entity_type, entity_id)");
 
   console.log("Banco inicializado.");
 
@@ -187,6 +331,14 @@ app.post("/api/auth/setup", async (req, res) => {
       [String(nome).trim(), String(email).trim(), hash]
     );
     const user = publicUser(result.rows[0]);
+    await addAudit({
+      user,
+      entityType: "usuarios",
+      entityId: user.id,
+      entityLabel: user.nome,
+      action: "CREATE",
+      after: { nome: user.nome, email: user.email, role: user.role, ativo: user.ativo }
+    });
     res.json({ token: makeToken(user), user });
   } catch (error) {
     console.error(error);
@@ -244,7 +396,16 @@ app.post("/api/users", authRequired, requireRole("admin"), async (req, res) => {
        RETURNING id, nome, email, role, ativo, created_at`,
       [String(nome).trim(), String(email).trim(), hash, role]
     );
-    res.json({ user: publicUser(result.rows[0]) });
+    const created = publicUser(result.rows[0]);
+    await addAudit({
+      user: req.user,
+      entityType: "usuarios",
+      entityId: created.id,
+      entityLabel: created.nome,
+      action: "CREATE",
+      after: { nome: created.nome, email: created.email, role: created.role, ativo: created.ativo }
+    });
+    res.json({ user: created });
   } catch (error) {
     if (error.code === "23505") return res.status(409).json({ error: "email_exists" });
     console.error(error);
@@ -263,6 +424,13 @@ app.patch("/api/users/:id", authRequired, requireRole("admin"), async (req, res)
       return res.status(400).json({ error: "cannot_disable_self" });
     }
 
+    const beforeResult = await pool.query(
+      "SELECT id, nome, email, role, ativo, created_at FROM users WHERE id = $1",
+      [targetId]
+    );
+    if (!beforeResult.rowCount) return res.status(404).json({ error: "not_found" });
+    const beforeUser = publicUser(beforeResult.rows[0]);
+
     if (role !== undefined) {
       await pool.query("UPDATE users SET role = $1 WHERE id = $2", [role, targetId]);
     }
@@ -279,8 +447,98 @@ app.patch("/api/users/:id", authRequired, requireRole("admin"), async (req, res)
       "SELECT id, nome, email, role, ativo, created_at FROM users WHERE id = $1",
       [targetId]
     );
-    if (!result.rowCount) return res.status(404).json({ error: "not_found" });
-    res.json({ user: publicUser(result.rows[0]) });
+    const updated = publicUser(result.rows[0]);
+
+    if (beforeUser.role !== updated.role) {
+      await addAudit({
+        user: req.user,
+        entityType: "usuarios",
+        entityId: updated.id,
+        entityLabel: updated.nome,
+        action: "UPDATE",
+        field: "role",
+        before: beforeUser.role,
+        after: updated.role
+      });
+    }
+    if (beforeUser.ativo !== updated.ativo) {
+      await addAudit({
+        user: req.user,
+        entityType: "usuarios",
+        entityId: updated.id,
+        entityLabel: updated.nome,
+        action: "UPDATE",
+        field: "ativo",
+        before: beforeUser.ativo,
+        after: updated.ativo
+      });
+    }
+    if (password !== undefined) {
+      await addAudit({
+        user: req.user,
+        entityType: "usuarios",
+        entityId: updated.id,
+        entityLabel: updated.nome,
+        action: "UPDATE",
+        field: "senha",
+        before: "[protegido]",
+        after: "[alterada]"
+      });
+    }
+
+    res.json({ user: updated });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "database_error" });
+  }
+});
+
+app.get("/api/audit", authRequired, requireRole("admin"), async (req, res) => {
+  try {
+    const limit = Math.min(Math.max(Number(req.query.limit) || 300, 1), 1000);
+    const entity = String(req.query.entity || "").trim();
+    const action = String(req.query.action || "").trim();
+    const user = String(req.query.user || "").trim();
+    const q = String(req.query.q || "").trim();
+
+    const where = [];
+    const params = [];
+
+    if (entity) {
+      params.push(entity);
+      where.push(`entity_type = $${params.length}`);
+    }
+    if (action) {
+      params.push(action);
+      where.push(`action = $${params.length}`);
+    }
+    if (user) {
+      params.push(`%${user}%`);
+      where.push(`user_name ILIKE $${params.length}`);
+    }
+    if (q) {
+      params.push(`%${q}%`);
+      where.push(`(
+        COALESCE(entity_label,'') ILIKE $${params.length}
+        OR COALESCE(field_name,'') ILIKE $${params.length}
+        OR COALESCE(before_value,'') ILIKE $${params.length}
+        OR COALESCE(after_value,'') ILIKE $${params.length}
+      )`);
+    }
+
+    params.push(limit);
+    const sql = `
+      SELECT id, user_id, user_name, user_email, entity_type, entity_id,
+             entity_label, action, field_name, before_value, after_value,
+             metadata, created_at
+      FROM audit_logs
+      ${where.length ? "WHERE " + where.join(" AND ") : ""}
+      ORDER BY created_at DESC, id DESC
+      LIMIT $${params.length}
+    `;
+
+    const result = await pool.query(sql, params);
+    res.json({ logs: result.rows });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "database_error" });
@@ -302,6 +560,12 @@ app.put("/api/storage/:key", authRequired, requireRole("admin", "operator"), asy
   const { value } = req.body || {};
   if (typeof value !== "string") return res.status(400).json({ error: "value_must_be_string" });
   try {
+    const previousResult = await pool.query(
+      "SELECT value FROM app_storage WHERE key = $1",
+      [req.params.key]
+    );
+    const previousValue = previousResult.rowCount ? previousResult.rows[0].value : null;
+
     await pool.query(
       `INSERT INTO app_storage (key, value, updated_at)
        VALUES ($1, $2, NOW())
@@ -309,6 +573,13 @@ app.put("/api/storage/:key", authRequired, requireRole("admin", "operator"), asy
        DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
       [req.params.key, value]
     );
+
+    try {
+      await auditStorageChange(req.user, req.params.key, previousValue, value);
+    } catch (auditError) {
+      console.error("Falha ao registrar auditoria:", auditError);
+    }
+
     res.json({ ok: true });
   } catch (error) {
     console.error(error);
