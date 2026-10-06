@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: patrimonet-api
+    runtime: node
+    plan: free
+    region: virginia
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: patrimonet-db
+          property: connectionString
+
+databases:
+  - name: patrimonet-db
+    plan: free
+    region: virginia
