@@ -1823,9 +1823,22 @@ function ImportarView({ equipamentos, postos, persistEquip, persistPostos, notif
         const postosAtuais = [...postos];
         const equipAtuais = [...equipamentos];
         const patrimoniosExistentes = new Set(equipAtuais.filter((e) => e.patrimonio).map((e) => normalize(e.patrimonio)));
+
+        // Para itens sem patrimônio, controla quantidade por equipamento + posto.
+        // Isso torna a importação idempotente: importar a mesma planilha novamente
+        // não duplica os itens que já existem.
+        const contagemSemPatrimonioExistente = new Map();
+        equipAtuais.filter((e) => !e.patrimonio).forEach((e) => {
+            const posto = postosAtuais.find((p) => p.id === e.postoAtualId);
+            const key = `${normalize(e.nome)}|${normalize(posto?.nome || "")}`;
+            contagemSemPatrimonioExistente.set(key, (contagemSemPatrimonioExistente.get(key) || 0) + 1);
+        });
+
+        const contagemSemPatrimonioImportada = new Map();
         let postosCriados = 0;
         let equipamentosImportados = 0;
         let duplicadosIgnorados = 0;
+
         for (const it of itensDetectados) {
             let posto = postosAtuais.find((p) => normalize(p.nome) === normalize(it.posto));
             if (!posto) {
@@ -1833,10 +1846,27 @@ function ImportarView({ equipamentos, postos, persistEquip, persistPostos, notif
                 postosAtuais.push(posto);
                 postosCriados++;
             }
-            if (it.patrimonio && patrimoniosExistentes.has(normalize(it.patrimonio))) {
-                duplicadosIgnorados++;
-                continue;
+
+            if (it.patrimonio) {
+                if (patrimoniosExistentes.has(normalize(it.patrimonio))) {
+                    duplicadosIgnorados++;
+                    continue;
+                }
+            } else {
+                const key = `${normalize(it.equipamento)}|${normalize(posto.nome)}`;
+                const jaExistem = contagemSemPatrimonioExistente.get(key) || 0;
+                const jaProcessadosNestaImportacao = contagemSemPatrimonioImportada.get(key) || 0;
+
+                // Os primeiros N itens da planilha equivalem aos N já existentes.
+                // Só adiciona unidades acima da quantidade que já existe.
+                if (jaProcessadosNestaImportacao < jaExistem) {
+                    contagemSemPatrimonioImportada.set(key, jaProcessadosNestaImportacao + 1);
+                    duplicadosIgnorados++;
+                    continue;
+                }
+                contagemSemPatrimonioImportada.set(key, jaProcessadosNestaImportacao + 1);
             }
+
             equipAtuais.push({
                 id: uid(),
                 nome: it.equipamento,
@@ -1848,10 +1878,13 @@ function ImportarView({ equipamentos, postos, persistEquip, persistPostos, notif
                 dataCadastro: todayISO(),
                 dataEntrega: todayISO(),
             });
+
             if (it.patrimonio)
                 patrimoniosExistentes.add(normalize(it.patrimonio));
+
             equipamentosImportados++;
         }
+
         await persistPostos(postosAtuais);
         await persistEquip(equipAtuais);
         setResultado({
@@ -1872,6 +1905,13 @@ function ImportarView({ equipamentos, postos, persistEquip, persistPostos, notif
         const postosAtuais = [...postos];
         const equipAtuais = [...equipamentos];
         const patrimoniosExistentes = new Set(equipAtuais.filter((e) => e.patrimonio).map((e) => normalize(e.patrimonio)));
+        const contagemSemPatrimonioExistente = new Map();
+        equipAtuais.filter((e) => !e.patrimonio).forEach((e) => {
+            const posto = postosAtuais.find((p) => p.id === e.postoAtualId);
+            const key = `${normalize(e.nome)}|${normalize(posto?.nome || "")}`;
+            contagemSemPatrimonioExistente.set(key, (contagemSemPatrimonioExistente.get(key) || 0) + 1);
+        });
+        const contagemSemPatrimonioImportada = new Map();
         let postosCriados = 0;
         let equipamentosImportados = 0;
         let duplicadosIgnorados = 0;
@@ -1893,9 +1933,21 @@ function ImportarView({ equipamentos, postos, persistEquip, persistPostos, notif
                 postosAtuais.push(posto);
                 postosCriados++;
             }
-            if (patrimonioCel && patrimoniosExistentes.has(normalize(patrimonioCel))) {
-                duplicadosIgnorados++;
-                continue;
+            if (patrimonioCel) {
+                if (patrimoniosExistentes.has(normalize(patrimonioCel))) {
+                    duplicadosIgnorados++;
+                    continue;
+                }
+            } else {
+                const key = `${normalize(equipNomeCel)}|${normalize(posto?.nome || "")}`;
+                const jaExistem = contagemSemPatrimonioExistente.get(key) || 0;
+                const jaProcessadosNestaImportacao = contagemSemPatrimonioImportada.get(key) || 0;
+                if (jaProcessadosNestaImportacao < jaExistem) {
+                    contagemSemPatrimonioImportada.set(key, jaProcessadosNestaImportacao + 1);
+                    duplicadosIgnorados++;
+                    continue;
+                }
+                contagemSemPatrimonioImportada.set(key, jaProcessadosNestaImportacao + 1);
             }
             equipAtuais.push({
                 id: uid(),
