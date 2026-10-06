@@ -116,21 +116,40 @@ const Boxes = makeIcon('boxes'), MapPin = makeIcon('pin'), ArrowLeftRight = make
 // Armazenamento híbrido: PostgreSQL via API, com fallback local.
 const PATRIMONET_API = "https://patrimonet-api.onrender.com";
 
-async function apiGet(key) {
-    const res = await fetch(`${PATRIMONET_API}/api/storage/${encodeURIComponent(key)}`);
-    if (res.status === 404) return null;
-    if (!res.ok) throw new Error("API indisponível");
-    const data = await res.json();
-    return data.found ? data.value : null;
-}
+const AUTH_TOKEN_KEY = "patrimonet:auth-token";
 
+function getAuthToken() {
+    return localStorage.getItem(AUTH_TOKEN_KEY) || "";
+}
+function setAuthToken(token) {
+    if (token) localStorage.setItem(AUTH_TOKEN_KEY, token);
+    else localStorage.removeItem(AUTH_TOKEN_KEY);
+}
+async function authFetch(path, options = {}) {
+    const headers = { ...(options.headers || {}) };
+    const token = getAuthToken();
+    if (token) headers.Authorization = `Bearer ${token}`;
+    if (options.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
+    const res = await fetch(`${PATRIMONET_API}${path}`, { ...options, headers });
+    let data = {};
+    try { data = await res.json(); } catch {}
+    if (!res.ok) {
+        const err = new Error(data.error || "request_failed");
+        err.status = res.status;
+        err.data = data;
+        throw err;
+    }
+    return data;
+}
+async function apiGet(key) {
+    const res = await authFetch(`/api/storage/${encodeURIComponent(key)}`);
+    return res.found ? res.value : null;
+}
 async function apiSet(key, value) {
-    const res = await fetch(`${PATRIMONET_API}/api/storage/${encodeURIComponent(key)}`, {
+    await authFetch(`/api/storage/${encodeURIComponent(key)}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ value })
     });
-    if (!res.ok) throw new Error("API indisponível");
     return true;
 }
 
@@ -541,14 +560,182 @@ function imprimirListagemEquipamentos(titulo, linhas, valorTotal) {
         }
     });
 }
+function AuthScreen({ onAuthenticated }) {
+    const [needsSetup, setNeedsSetup] = useState(null);
+    const [nome, setNome] = useState("");
+    const [email, setEmail] = useState("");
+    const [password, setPassword] = useState("");
+    const [error, setError] = useState("");
+    const [busy, setBusy] = useState(false);
+
+    useEffect(() => {
+        authFetch("/api/auth/status")
+            .then((r) => setNeedsSetup(!!r.needsSetup))
+            .catch(() => { setNeedsSetup(false); setError("Não foi possível verificar o acesso. Tente novamente."); });
+    }, []);
+
+    async function submit(e) {
+        e.preventDefault();
+        setError("");
+        setBusy(true);
+        try {
+            const path = needsSetup ? "/api/auth/setup" : "/api/auth/login";
+            const body = needsSetup ? { nome, email, password } : { email, password };
+            const result = await authFetch(path, { method: "POST", body: JSON.stringify(body) });
+            setAuthToken(result.token);
+            onAuthenticated(result.user);
+        } catch (err) {
+            if (err.data?.error === "invalid_credentials") setError("E-mail ou senha inválidos.");
+            else if (err.data?.error === "setup_already_done") {
+                setNeedsSetup(false);
+                setError("O administrador inicial já foi criado. Faça login.");
+            }
+            else if (err.data?.error === "invalid_input") setError("Preencha os campos corretamente. A senha deve ter pelo menos 8 caracteres.");
+            else setError("Não foi possível concluir o acesso agora.");
+        } finally {
+            setBusy(false);
+        }
+    }
+
+    if (needsSetup === null) {
+        return React.createElement("div", { style: { minHeight: "80vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#5C7876", fontFamily: "Inter, system-ui, sans-serif" } }, "Verificando acesso…");
+    }
+
+    return React.createElement("div", { style: { minHeight: "88vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, fontFamily: "Inter, system-ui, sans-serif", background: "#F5F8F8" } },
+        React.createElement("div", { style: { width: 430, maxWidth: "100%", background: "#fff", border: "1px solid #DEE9E7", borderRadius: 16, padding: 28, boxShadow: "0 18px 50px rgba(10,79,79,0.10)" } },
+            React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 10, marginBottom: 24 } },
+                React.createElement("div", { style: { width: 38, height: 38, borderRadius: 10, background: "#0F6E6E", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800 } }, "P"),
+                React.createElement("div", null,
+                    React.createElement("div", { style: { fontSize: 20, fontWeight: 800, color: "#16302E" } }, "PatrimôNet"),
+                    React.createElement("div", { style: { fontSize: 12.5, color: "#5C7876", marginTop: 2 } }, needsSetup ? "Crie o primeiro administrador" : "Acesse sua conta"))),
+            React.createElement("form", { onSubmit: submit },
+                needsSetup && React.createElement(Field, { label: "Nome" },
+                    React.createElement("input", { style: { ...inputStyle, marginBottom: 13 }, value: nome, onChange: (e) => setNome(e.target.value), placeholder: "Seu nome", required: true })),
+                React.createElement(Field, { label: "E-mail" },
+                    React.createElement("input", { type: "email", style: { ...inputStyle, marginBottom: 13 }, value: email, onChange: (e) => setEmail(e.target.value), placeholder: "seu@email.com", required: true })),
+                React.createElement(Field, { label: "Senha" },
+                    React.createElement("input", { type: "password", style: { ...inputStyle, marginBottom: 8 }, value: password, onChange: (e) => setPassword(e.target.value), placeholder: needsSetup ? "Mínimo de 8 caracteres" : "Sua senha", required: true })),
+                error && React.createElement("div", { style: { color: "#C1443D", background: "#FBEAE9", borderRadius: 8, padding: "9px 11px", fontSize: 12.5, margin: "10px 0" } }, error),
+                React.createElement("button", { type: "submit", disabled: busy, style: { width: "100%", marginTop: 10, border: "none", borderRadius: 9, padding: "11px 14px", background: busy ? "#9DBAB7" : "#0F6E6E", color: "#fff", fontWeight: 700, cursor: busy ? "wait" : "pointer" } }, busy ? "Processando…" : needsSetup ? "Criar administrador" : "Entrar")),
+            needsSetup && React.createElement("div", { style: { fontSize: 11.5, color: "#718B88", marginTop: 14, lineHeight: 1.5 } }, "Esta etapa aparece somente uma vez. Depois, novos usuários serão criados pelo administrador dentro do sistema.")));
+}
+
+function UsersView({ notify, currentUser }) {
+    const [users, setUsers] = useState([]);
+    const [loadingUsers, setLoadingUsers] = useState(true);
+    const [form, setForm] = useState({ nome: "", email: "", password: "", role: "operator" });
+    const [error, setError] = useState("");
+
+    async function loadUsers() {
+        setLoadingUsers(true);
+        try {
+            const r = await authFetch("/api/users");
+            setUsers(r.users || []);
+        } catch {
+            setError("Não foi possível carregar os usuários.");
+        } finally {
+            setLoadingUsers(false);
+        }
+    }
+    useEffect(() => { loadUsers(); }, []);
+
+    async function createUser(e) {
+        e.preventDefault();
+        setError("");
+        try {
+            await authFetch("/api/users", { method: "POST", body: JSON.stringify(form) });
+            setForm({ nome: "", email: "", password: "", role: "operator" });
+            notify("Usuário criado");
+            await loadUsers();
+        } catch (err) {
+            if (err.data?.error === "email_exists") setError("Já existe um usuário com esse e-mail.");
+            else setError("Não foi possível criar o usuário. Verifique os campos e use senha com pelo menos 8 caracteres.");
+        }
+    }
+
+    async function patchUser(id, changes) {
+        try {
+            await authFetch(`/api/users/${id}`, { method: "PATCH", body: JSON.stringify(changes) });
+            notify("Permissão atualizada");
+            await loadUsers();
+        } catch (err) {
+            if (err.data?.error === "cannot_disable_self") setError("Você não pode desativar a própria conta.");
+            else setError("Não foi possível atualizar o usuário.");
+        }
+    }
+
+    const roleLabel = (r) => r === "admin" ? "Administrador" : r === "operator" ? "Operador" : "Consulta";
+
+    return React.createElement("div", null,
+        React.createElement(SectionHeader, { title: "Usuários e permissões", subtitle: "Controle quem pode visualizar e alterar o patrimônio" }),
+        React.createElement("div", { className: "grid-2", style: { display: "grid", gridTemplateColumns: "360px 1fr", gap: 18 } },
+            React.createElement("form", { onSubmit: createUser, style: { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 18, alignSelf: "start" } },
+                React.createElement("h3", { style: { margin: "0 0 14px", fontSize: 15 } }, "Novo usuário"),
+                React.createElement(Field, { label: "Nome" }, React.createElement("input", { style: { ...inputStyle, marginBottom: 11 }, value: form.nome, onChange: (e) => setForm({ ...form, nome: e.target.value }), required: true })),
+                React.createElement(Field, { label: "E-mail" }, React.createElement("input", { type: "email", style: { ...inputStyle, marginBottom: 11 }, value: form.email, onChange: (e) => setForm({ ...form, email: e.target.value }), required: true })),
+                React.createElement(Field, { label: "Senha inicial" }, React.createElement("input", { type: "password", minLength: 8, style: { ...inputStyle, marginBottom: 11 }, value: form.password, onChange: (e) => setForm({ ...form, password: e.target.value }), required: true })),
+                React.createElement(Field, { label: "Perfil" },
+                    React.createElement("select", { style: { ...inputStyle, marginBottom: 14 }, value: form.role, onChange: (e) => setForm({ ...form, role: e.target.value }) },
+                        React.createElement("option", { value: "operator" }, "Operador — pode alterar"),
+                        React.createElement("option", { value: "viewer" }, "Consulta — somente leitura"),
+                        React.createElement("option", { value: "admin" }, "Administrador — acesso total"))),
+                error && React.createElement("div", { style: { color: "var(--danger)", fontSize: 12, marginBottom: 10 } }, error),
+                React.createElement(PrimaryButton, { type: "submit", icon: Plus }, "Criar usuário")),
+            React.createElement("div", { style: { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 18 } },
+                React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 } },
+                    React.createElement("h3", { style: { margin: 0, fontSize: 15 } }, "Usuários cadastrados"),
+                    React.createElement("span", { style: { fontSize: 12, color: "var(--text-secondary)" } }, users.length, " usuário", users.length !== 1 ? "s" : "")),
+                loadingUsers ? React.createElement("div", { style: { color: "var(--text-secondary)", padding: 20 } }, "Carregando…") :
+                React.createElement("div", { className: "table-scroll" },
+                    React.createElement("table", { style: { width: "100%", borderCollapse: "collapse", fontSize: 13 } },
+                        React.createElement("thead", null, React.createElement("tr", { style: { borderBottom: "1px solid var(--border)" } },
+                            ["Usuário","Perfil","Status"].map((h) => React.createElement("th", { key: h, style: { textAlign: "left", padding: "9px 10px", color: "var(--text-secondary)", fontSize: 11, textTransform: "uppercase" } }, h)))),
+                        React.createElement("tbody", null, users.map((u) =>
+                            React.createElement("tr", { key: u.id, style: { borderBottom: "1px solid var(--border)" } },
+                                React.createElement("td", { style: { padding: "11px 10px" } },
+                                    React.createElement("div", { style: { fontWeight: 700 } }, u.nome, Number(u.id) === Number(currentUser.id) ? " (você)" : ""),
+                                    React.createElement("div", { style: { fontSize: 11.5, color: "var(--text-secondary)", marginTop: 2 } }, u.email)),
+                                React.createElement("td", { style: { padding: "11px 10px" } },
+                                    React.createElement("select", { style: { ...inputStyle, padding: "6px 8px" }, value: u.role, onChange: (e) => patchUser(u.id, { role: e.target.value }) },
+                                        React.createElement("option", { value: "admin" }, roleLabel("admin")),
+                                        React.createElement("option", { value: "operator" }, roleLabel("operator")),
+                                        React.createElement("option", { value: "viewer" }, roleLabel("viewer")))),
+                                React.createElement("td", { style: { padding: "11px 10px" } },
+                                    React.createElement("button", { onClick: () => patchUser(u.id, { ativo: !u.ativo }), style: { border: "none", borderRadius: 20, padding: "5px 9px", cursor: "pointer", fontWeight: 700, fontSize: 11.5, background: u.ativo ? "var(--success-bg)" : "var(--danger-bg)", color: u.ativo ? "var(--success)" : "var(--danger)" } }, u.ativo ? "Ativo" : "Inativo")))))))));
+}
+
 function App() {
     const [tab, setTab] = useState("dashboard");
+    const [authLoading, setAuthLoading] = useState(true);
+    const [currentUser, setCurrentUser] = useState(null);
     const [loading, setLoading] = useState(true);
     const [equipamentos, setEquipamentos] = useState([]);
     const [postos, setPostos] = useState([]);
     const [movimentacoes, setMovimentacoes] = useState([]);
     const [toast, setToast] = useState(null);
+
     useEffect(() => {
+        (async () => {
+            const token = getAuthToken();
+            if (!token) {
+                setAuthLoading(false);
+                setLoading(false);
+                return;
+            }
+            try {
+                const r = await authFetch("/api/auth/me");
+                setCurrentUser(r.user);
+            } catch {
+                setAuthToken("");
+            } finally {
+                setAuthLoading(false);
+            }
+        })();
+    }, []);
+
+    useEffect(() => {
+        if (!currentUser) return;
+        setLoading(true);
         (async () => {
             const [e, p, m] = await Promise.all([
                 loadKey(KEYS.equip, []),
@@ -560,113 +747,104 @@ function App() {
             setMovimentacoes(m);
             setLoading(false);
         })();
-    }, []);
+    }, [currentUser]);
+
     function notify(msg) {
         setToast(msg);
         setTimeout(() => setToast(null), 2600);
     }
+
+    const canWrite = currentUser?.role === "admin" || currentUser?.role === "operator";
+    const isAdmin = currentUser?.role === "admin";
+
     async function persistEquip(next) {
+        if (!canWrite) return notify("Seu perfil é somente consulta");
         setEquipamentos(next);
         await saveKey(KEYS.equip, next);
     }
     async function persistPostos(next) {
+        if (!canWrite) return notify("Seu perfil é somente consulta");
         setPostos(next);
         await saveKey(KEYS.postos, next);
     }
     async function persistMov(next) {
+        if (!canWrite) return notify("Seu perfil é somente consulta");
         setMovimentacoes(next);
         await saveKey(KEYS.mov, next);
     }
+
+    function logout() {
+        setAuthToken("");
+        setCurrentUser(null);
+        setTab("dashboard");
+        setEquipamentos([]);
+        setPostos([]);
+        setMovimentacoes([]);
+    }
+
+    if (authLoading) {
+        return React.createElement("div", { style: { minHeight: "80vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#5C7876", fontFamily: "Inter, system-ui, sans-serif" } }, "Carregando acesso…");
+    }
+
+    if (!currentUser) {
+        return React.createElement(AuthScreen, { onAuthenticated: setCurrentUser });
+    }
+
     const postoNome = (id) => postos.find((p) => p.id === id)?.nome || "Sem posto";
     const nav = [
-        { id: "dashboard", label: "Visão geral", icon: LayoutGrid },
-        { id: "equipamentos", label: "Equipamentos", icon: Boxes },
-        { id: "postos", label: "Postos", icon: MapPin },
-        { id: "movimentar", label: "Movimentar", icon: ArrowLeftRight },
-        { id: "historico", label: "Histórico", icon: History },
-        { id: "entregas", label: "Entregas", icon: Truck },
-        { id: "importar", label: "Importar planilha", icon: Upload },
-    ];
+        { id: "dashboard", label: "Visão geral", icon: LayoutGrid, show: true },
+        { id: "equipamentos", label: "Equipamentos", icon: Boxes, show: true },
+        { id: "postos", label: "Postos", icon: MapPin, show: true },
+        { id: "movimentar", label: "Movimentar", icon: ArrowLeftRight, show: canWrite },
+        { id: "historico", label: "Histórico", icon: History, show: true },
+        { id: "entregas", label: "Entregas", icon: Truck, show: true },
+        { id: "importar", label: "Importar planilha", icon: Upload, show: canWrite },
+        { id: "usuarios", label: "Usuários", icon: Tag, show: isAdmin },
+    ].filter((n) => n.show);
+
     if (loading) {
-        return (React.createElement(Shell, null,
-            React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--text-secondary)", fontFamily: "var(--font-body)" } }, "Carregando dados\u2026")));
+        return React.createElement(Shell, null,
+            React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "center", height: "100%", minHeight: 640, color: "var(--text-secondary)", fontFamily: "var(--font-body)" } }, "Carregando dados…"));
     }
-    return (React.createElement(Shell, null,
+
+    return React.createElement(Shell, null,
         React.createElement("div", { className: "app-body", style: { display: "flex", height: "100%", minHeight: 640 } },
             React.createElement("aside", { className: "app-sidebar", style: {
-                    width: 216,
-                    flexShrink: 0,
-                    background: "var(--surface)",
-                    borderRight: "1px solid var(--border)",
-                    padding: "20px 12px",
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 4,
-                } },
+                width: 216, flexShrink: 0, background: "var(--surface)", borderRight: "1px solid var(--border)",
+                padding: "20px 12px", display: "flex", flexDirection: "column", gap: 4
+            } },
                 React.createElement("div", { className: "brand-row", style: { display: "flex", alignItems: "center", gap: 8, padding: "4px 10px 20px" } },
                     React.createElement("div", { style: { width: 30, height: 30, borderRadius: 7, background: "var(--primary)", display: "flex", alignItems: "center", justifyContent: "center" } },
                         React.createElement(Tag, { size: 16, color: "#fff", strokeWidth: 2.2 })),
-                    React.createElement("div", { style: { fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 15, color: "var(--text-primary)", letterSpacing: "-0.01em" } }, "Patrim\u00F4Net")),
+                    React.createElement("div", { style: { fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 15 } }, "PatrimôNet")),
                 nav.map((n) => {
                     const Icon = n.icon;
                     const active = tab === n.id;
-                    return (React.createElement("button", { key: n.id, className: "nav-btn", onClick: () => setTab(n.id), style: {
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 10,
-                            padding: "9px 12px",
-                            borderRadius: 8,
-                            border: "none",
-                            cursor: "pointer",
-                            background: active ? "var(--primary-soft)" : "transparent",
-                            color: active ? "var(--primary)" : "var(--text-secondary)",
-                            fontFamily: "var(--font-body)",
-                            fontWeight: active ? 600 : 500,
-                            fontSize: 13.5,
-                            textAlign: "left",
-                            transition: "background 0.15s, color 0.15s",
-                        }, onMouseEnter: (e) => { if (!active)
-                            e.currentTarget.style.background = "var(--hover)"; }, onMouseLeave: (e) => { if (!active)
-                            e.currentTarget.style.background = "transparent"; } },
-                        React.createElement(Icon, { size: 16, strokeWidth: 2 }),
-                        n.label));
+                    return React.createElement("button", { key: n.id, className: "nav-btn", onClick: () => setTab(n.id), style: {
+                        display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderRadius: 8, border: "none",
+                        cursor: "pointer", background: active ? "var(--primary-soft)" : "transparent",
+                        color: active ? "var(--primary)" : "var(--text-secondary)", fontWeight: active ? 700 : 500,
+                        fontSize: 13.5, textAlign: "left"
+                    } }, React.createElement(Icon, { size: 16 }), n.label);
                 }),
-                React.createElement("div", { className: "footer-info", style: { marginTop: "auto", padding: "10px 10px 2px", fontSize: 11, color: "var(--text-tertiary)", fontFamily: "var(--font-body)", lineHeight: 1.5 } },
-                    equipamentos.length,
-                    " equipamento",
-                    equipamentos.length !== 1 ? "s" : "",
-                    " \u00B7 ",
-                    postos.length,
-                    " posto",
-                    postos.length !== 1 ? "s" : "")),
+                React.createElement("div", { className: "footer-info", style: { marginTop: "auto", padding: "12px 10px 2px", fontSize: 11.5, color: "var(--text-secondary)", lineHeight: 1.5 } },
+                    React.createElement("div", { style: { fontWeight: 700, color: "var(--text-primary)" } }, currentUser.nome),
+                    React.createElement("div", null, currentUser.role === "admin" ? "Administrador" : currentUser.role === "operator" ? "Operador" : "Consulta"),
+                    React.createElement("button", { onClick: logout, style: { marginTop: 8, background: "none", border: "none", padding: 0, color: "var(--danger)", fontSize: 11.5, fontWeight: 700, cursor: "pointer" } }, "Sair")),
             React.createElement("main", { className: "app-main", style: { flex: 1, overflow: "auto", padding: "28px 32px", background: "var(--bg)" } },
-                tab === "dashboard" && (React.createElement(Dashboard, { equipamentos: equipamentos, postos: postos, movimentacoes: movimentacoes, postoNome: postoNome, setTab: setTab })),
-                tab === "equipamentos" && (React.createElement(EquipamentosView, { equipamentos: equipamentos, postos: postos, persistEquip: persistEquip, postoNome: postoNome, notify: notify })),
-                tab === "postos" && (React.createElement(PostosView, { postos: postos, equipamentos: equipamentos, persistPostos: persistPostos, notify: notify })),
-                tab === "movimentar" && (React.createElement(MovimentarView, { equipamentos: equipamentos, postos: postos, persistEquip: persistEquip, movimentacoes: movimentacoes, persistMov: persistMov, postoNome: postoNome, notify: notify })),
-                tab === "historico" && (React.createElement(HistoricoView, { movimentacoes: movimentacoes, equipamentos: equipamentos, postoNome: postoNome })),
-                tab === "entregas" && (React.createElement(EntregasView, { equipamentos: equipamentos, postoNome: postoNome })),
-                tab === "importar" && (React.createElement(ImportarView, { equipamentos: equipamentos, postos: postos, persistEquip: persistEquip, persistPostos: persistPostos, notify: notify })))),
-        toast && (React.createElement("div", { className: "toast-msg", style: {
-                position: "absolute",
-                bottom: 20,
-                left: "50%",
-                transform: "translateX(-50%)",
-                background: "var(--text-primary)",
-                color: "#fff",
-                padding: "10px 18px",
-                borderRadius: 8,
-                fontFamily: "var(--font-body)",
-                fontSize: 13,
-                fontWeight: 500,
-                boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                zIndex: 50,
-            } },
-            React.createElement(CheckCircle2, { size: 15, color: "var(--success-light)" }),
-            toast))));
+                tab === "dashboard" && React.createElement(Dashboard, { equipamentos, postos, movimentacoes, postoNome, setTab }),
+                tab === "equipamentos" && React.createElement(EquipamentosView, { equipamentos, postos, persistEquip, postoNome, notify }),
+                tab === "postos" && React.createElement(PostosView, { postos, equipamentos, persistPostos, notify }),
+                tab === "movimentar" && canWrite && React.createElement(MovimentarView, { equipamentos, postos, persistEquip, movimentacoes, persistMov, postoNome, notify }),
+                tab === "historico" && React.createElement(HistoricoView, { movimentacoes, equipamentos, postoNome }),
+                tab === "entregas" && React.createElement(EntregasView, { equipamentos, postoNome }),
+                tab === "importar" && canWrite && React.createElement(ImportarView, { equipamentos, postos, persistEquip, persistPostos, notify }),
+                tab === "usuarios" && isAdmin && React.createElement(UsersView, { notify, currentUser }))),
+        toast && React.createElement("div", { className: "toast-msg", style: {
+            position: "absolute", bottom: 20, left: "50%", transform: "translateX(-50%)",
+            background: "var(--text-primary)", color: "#fff", padding: "10px 18px", borderRadius: 8,
+            fontSize: 13, fontWeight: 500, boxShadow: "0 8px 24px rgba(0,0,0,0.18)", zIndex: 50
+        } }, toast));
 }
 function Shell({ children }) {
     return (React.createElement("div", { className: "app-shell", style: {
@@ -856,102 +1034,109 @@ function StatusPill({ status }) {
 // ---------- Dashboard ----------
 function Dashboard({ equipamentos, postos, movimentacoes, postoNome, setTab }) {
     const semPatrimonio = equipamentos.filter((e) => !e.patrimonio).length;
+    const manutencao = equipamentos.filter((e) => e.status === "manutencao").length;
+    const baixados = equipamentos.filter((e) => e.status === "baixa").length;
+    const ativos = equipamentos.length - manutencao - baixados;
+    const valorTotal = equipamentos.reduce((s, e) => s + (Number(e.valor) || 0), 0);
+    const coberturaPatrimonio = equipamentos.length ? Math.round(((equipamentos.length - semPatrimonio) / equipamentos.length) * 100) : 0;
     const recentes = [...movimentacoes].sort((a, b) => (a.data < b.data ? 1 : -1)).slice(0, 6);
+
     const porPosto = useMemo(() => {
         const map = {};
         postos.forEach((p) => (map[p.id] = 0));
         equipamentos.forEach((e) => {
-            if (e.postoAtualId && map[e.postoAtualId] !== undefined)
-                map[e.postoAtualId]++;
+            if (e.postoAtualId && map[e.postoAtualId] !== undefined) map[e.postoAtualId]++;
         });
         return postos.map((p) => ({ posto: p, count: map[p.id] || 0 })).sort((a, b) => b.count - a.count);
     }, [postos, equipamentos]);
-    // agrupa por tipo de equipamento (ignorando maiúsculas/espaços) para o ranking
+
     const rankingTipos = useMemo(() => {
         const map = new Map();
         equipamentos.forEach((e) => {
             const key = normalize(e.nome);
-            if (!key)
-                return;
-            if (!map.has(key))
-                map.set(key, { nome: e.nome.trim(), count: 0 });
+            if (!key) return;
+            if (!map.has(key)) map.set(key, { nome: e.nome.trim(), count: 0 });
             map.get(key).count++;
         });
         return Array.from(map.values()).sort((a, b) => b.count - a.count);
     }, [equipamentos]);
-    const top3 = rankingTipos.slice(0, 3);
-    const medalha = ["#D6A94A", "#A6ACB8", "#B8794A"]; // ouro, prata, bronze
+
     const cards = [
-        { label: "Equipamentos cadastrados", value: equipamentos.length, icon: Boxes, color: "var(--primary)" },
-        { label: "Postos cadastrados", value: postos.length, icon: MapPin, color: "var(--accent)" },
-        { label: "Tipos de equipamento distintos", value: rankingTipos.length, icon: LayoutGrid, color: "var(--primary-dark)" },
+        { label: "Equipamentos", value: equipamentos.length.toLocaleString("pt-BR"), note: `${rankingTipos.length} tipos distintos`, icon: Boxes },
+        { label: "Valor cadastrado", value: valorTotal.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 }), note: "Soma dos valores informados", icon: Tag },
+        { label: "Postos", value: postos.length, note: `${porPosto.filter(x => x.count > 0).length} com equipamentos`, icon: MapPin },
+        { label: "Em manutenção", value: manutencao, note: manutencao ? "Requer acompanhamento" : "Nenhuma pendência", icon: Wrench },
     ];
-    return (React.createElement("div", null,
-        React.createElement(SectionHeader, { title: "Vis\u00E3o geral", subtitle: "Panorama do parque de equipamentos e postos" }),
-        React.createElement("div", { className: "grid-3", style: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, marginBottom: 18 } }, cards.map((c) => (React.createElement("div", { key: c.label, style: { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 16 } },
-            React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 } },
-                React.createElement(c.icon, { size: 17, color: c.color, strokeWidth: 2.2 })),
-            React.createElement("div", { style: { fontFamily: "var(--font-display)", fontSize: 24, fontWeight: 700, color: "var(--text-primary)" } }, c.value),
-            React.createElement("div", { style: { fontSize: 12, color: "var(--text-secondary)", marginTop: 2 } }, c.label))))),
-        semPatrimonio > 0 && (React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 9, background: "var(--warn-bg)", border: "1px solid #EAD7AC", borderRadius: 10, padding: "10px 14px", marginBottom: 22, fontSize: 13, color: "#8A5D14" } },
-            React.createElement(AlertTriangle, { size: 15 }),
-            semPatrimonio,
-            " equipamento",
-            semPatrimonio !== 1 ? "s" : "",
-            " sem n\u00FAmero de patrim\u00F4nio cadastrado.")),
-        top3.length > 0 && (React.createElement("div", { style: {
-                background: "linear-gradient(135deg, var(--primary-dark), var(--primary))",
-                borderRadius: 14, padding: "22px 24px", marginBottom: 22,
-                display: "flex", flexDirection: "column", gap: 16,
-            } },
-            React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8 } },
-                React.createElement(Package, { size: 16, color: "#EAF6F4" }),
-                React.createElement("h3", { style: { fontFamily: "var(--font-display)", fontSize: 14, fontWeight: 700, margin: 0, color: "#EAF6F4", letterSpacing: "0.01em" } }, "Equipamentos que mais temos")),
-            React.createElement("div", { className: "top3-grid", style: { display: "grid", gridTemplateColumns: `repeat(${top3.length}, 1fr)`, gap: 16 } }, top3.map((t, i) => (React.createElement("div", { key: t.nome, style: { background: "rgba(255,255,255,0.08)", borderRadius: 12, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 8 } },
-                React.createElement("div", { style: {
-                        width: 26, height: 26, borderRadius: "50%", background: medalha[i],
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 12.5, color: "#26221A",
-                    } }, i + 1),
-                React.createElement("div", { style: { fontFamily: "var(--font-display)", fontSize: 32, fontWeight: 700, color: "#fff", lineHeight: 1 } }, t.count),
-                React.createElement("div", { style: { fontSize: 13, color: "#DCEEEC", fontWeight: 600, textTransform: "capitalize" } }, t.nome.toLowerCase()))))))),
-        React.createElement("div", { className: "grid-2", style: { display: "grid", gridTemplateColumns: "1.1fr 1fr", gap: 18 } },
+
+    const totalStatus = Math.max(equipamentos.length, 1);
+    const statusRows = [
+        { label: "Ativos", count: ativos, color: "var(--success)" },
+        { label: "Em manutenção", count: manutencao, color: "var(--warn)" },
+        { label: "Baixados", count: baixados, color: "var(--danger)" },
+    ];
+
+    return React.createElement("div", null,
+        React.createElement(SectionHeader, { title: "Visão geral", subtitle: "Indicadores gerenciais do patrimônio e da operação" }),
+
+        React.createElement("div", { className: "grid-4", style: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14, marginBottom: 18 } },
+            cards.map((c) => React.createElement("div", { key: c.label, style: { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 17 } },
+                React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } },
+                    React.createElement("div", { style: { fontSize: 12, color: "var(--text-secondary)", fontWeight: 600 } }, c.label),
+                    React.createElement(c.icon, { size: 17, color: "var(--primary)" })),
+                React.createElement("div", { style: { fontFamily: "var(--font-display)", fontSize: 25, fontWeight: 700, marginTop: 8, color: "var(--text-primary)" } }, c.value),
+                React.createElement("div", { style: { fontSize: 11.5, color: "var(--text-tertiary)", marginTop: 4 } }, c.note)))),
+
+        React.createElement("div", { className: "grid-2", style: { display: "grid", gridTemplateColumns: "1.05fr .95fr", gap: 18, marginBottom: 18 } },
             React.createElement("div", { style: { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 18 } },
-                React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 } },
-                    React.createElement("h3", { style: { fontFamily: "var(--font-display)", fontSize: 14.5, fontWeight: 700, margin: 0 } }, "\u00DAltimas movimenta\u00E7\u00F5es"),
-                    React.createElement("button", { onClick: () => setTab("historico"), style: { background: "none", border: "none", color: "var(--primary)", fontSize: 12, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 2 } },
-                        "Ver tudo ",
-                        React.createElement(ChevronRight, { size: 13 }))),
-                recentes.length === 0 ? (React.createElement(EmptyState, { icon: ArrowLeftRight, title: "Nenhuma movimenta\u00E7\u00E3o ainda", subtitle: "As movimenta\u00E7\u00F5es entre postos aparecer\u00E3o aqui." })) : (React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 10 } }, recentes.map((m) => {
-                    const eq = equipamentos.find((e) => e.id === m.equipamentoId);
-                    const nomeExibir = m.equipamentoNome || eq?.nome || "Equipamento removido";
-                    const qtd = m.quantidade || 1;
-                    return (React.createElement("div", { key: m.id, style: { display: "flex", alignItems: "center", gap: 10, fontSize: 12.5 } },
-                        React.createElement("div", { style: { width: 26, height: 26, borderRadius: 7, background: "var(--primary-soft)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 } },
-                            React.createElement(ArrowLeftRight, { size: 12, color: "var(--primary)" })),
-                        React.createElement("div", { style: { flex: 1, minWidth: 0 } },
-                            React.createElement("span", { style: { fontWeight: 600, color: "var(--text-primary)" } },
-                                nomeExibir,
-                                qtd > 1 ? ` (×${qtd})` : ""),
-                            React.createElement("span", { style: { color: "var(--text-secondary)" } },
-                                " ",
-                                "\u00B7 ",
-                                m.postoOrigemNome,
-                                " \u2192 ",
-                                m.postoDestinoNome)),
-                        React.createElement("span", { style: { color: "var(--text-tertiary)", flexShrink: 0 } }, fmtDate(m.data))));
-                })))),
+                React.createElement("div", { style: { display: "flex", justifyContent: "space-between", marginBottom: 16 } },
+                    React.createElement("div", null,
+                        React.createElement("h3", { style: { margin: 0, fontSize: 14.5 } }, "Situação do parque"),
+                        React.createElement("div", { style: { fontSize: 11.5, color: "var(--text-secondary)", marginTop: 3 } }, "Distribuição por status")),
+                    React.createElement("div", { style: { textAlign: "right" } },
+                        React.createElement("div", { style: { fontWeight: 800, color: "var(--primary)", fontSize: 18 } }, coberturaPatrimonio, "%"),
+                        React.createElement("div", { style: { fontSize: 10.5, color: "var(--text-tertiary)" } }, "com patrimônio"))),
+                statusRows.map((s) => React.createElement("div", { key: s.label, style: { marginBottom: 13 } },
+                    React.createElement("div", { style: { display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 5 } },
+                        React.createElement("span", { style: { fontWeight: 600 } }, s.label),
+                        React.createElement("span", { style: { color: "var(--text-secondary)" } }, s.count)),
+                    React.createElement("div", { style: { height: 8, background: "var(--hover)", borderRadius: 20, overflow: "hidden" } },
+                        React.createElement("div", { style: { width: `${Math.max((s.count / totalStatus) * 100, s.count ? 2 : 0)}%`, height: "100%", background: s.color, borderRadius: 20 } })))),
+                semPatrimonio > 0 && React.createElement("div", { style: { marginTop: 8, padding: "9px 11px", background: "var(--warn-bg)", borderRadius: 8, fontSize: 12, color: "#8A5D14" } },
+                    semPatrimonio.toLocaleString("pt-BR"), " equipamento", semPatrimonio !== 1 ? "s" : "", " sem número de patrimônio.")),
+
             React.createElement("div", { style: { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 18 } },
-                React.createElement("h3", { style: { fontFamily: "var(--font-display)", fontSize: 14.5, fontWeight: 700, margin: "0 0 14px" } }, "Equipamentos por posto"),
-                postos.length === 0 ? (React.createElement(EmptyState, { icon: MapPin, title: "Nenhum posto cadastrado", subtitle: "Cadastre um posto para organizar seus equipamentos." })) : (React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 11 } }, porPosto.map(({ posto, count }) => {
-                    const max = Math.max(...porPosto.map((x) => x.count), 1);
-                    return (React.createElement("div", { key: posto.id },
-                        React.createElement("div", { style: { display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 4 } },
-                            React.createElement("span", { style: { fontWeight: 600, color: "var(--text-primary)" } }, posto.nome),
+                React.createElement("h3", { style: { margin: "0 0 14px", fontSize: 14.5 } }, "Maiores postos"),
+                porPosto.length === 0 ? React.createElement(EmptyState, { icon: MapPin, title: "Nenhum posto cadastrado" }) :
+                porPosto.slice(0, 6).map(({ posto, count }, i) => {
+                    const max = Math.max(porPosto[0]?.count || 1, 1);
+                    return React.createElement("div", { key: posto.id, style: { marginBottom: 11 } },
+                        React.createElement("div", { style: { display: "flex", justifyContent: "space-between", fontSize: 12.2, marginBottom: 4 } },
+                            React.createElement("span", { style: { fontWeight: 600 } }, i + 1, ". ", posto.nome),
                             React.createElement("span", { style: { color: "var(--text-secondary)" } }, count)),
-                        React.createElement("div", { style: { height: 6, background: "var(--hover)", borderRadius: 4, overflow: "hidden" } },
-                            React.createElement("div", { style: { height: "100%", width: `${(count / max) * 100}%`, background: "var(--primary)", borderRadius: 4, transition: "width 0.3s" } }))));
-                })))))));
+                        React.createElement("div", { style: { height: 7, background: "var(--hover)", borderRadius: 20, overflow: "hidden" } },
+                            React.createElement("div", { style: { width: `${(count / max) * 100}%`, height: "100%", background: "var(--primary)", borderRadius: 20 } })));
+                }))),
+
+        React.createElement("div", { className: "grid-2", style: { display: "grid", gridTemplateColumns: "1.1fr .9fr", gap: 18 } },
+            React.createElement("div", { style: { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 18 } },
+                React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 } },
+                    React.createElement("h3", { style: { margin: 0, fontSize: 14.5 } }, "Últimas movimentações"),
+                    React.createElement("button", { onClick: () => setTab("historico"), style: { border: "none", background: "none", color: "var(--primary)", fontWeight: 700, cursor: "pointer", fontSize: 12 } }, "Ver histórico")),
+                recentes.length === 0 ? React.createElement(EmptyState, { icon: ArrowLeftRight, title: "Nenhuma movimentação ainda" }) :
+                recentes.map((m) => React.createElement("div", { key: m.id, style: { display: "flex", justifyContent: "space-between", gap: 10, padding: "9px 0", borderBottom: "1px solid var(--border)", fontSize: 12.3 } },
+                    React.createElement("div", null,
+                        React.createElement("div", { style: { fontWeight: 700 } }, m.equipamentoNome || "Equipamento"),
+                        React.createElement("div", { style: { color: "var(--text-secondary)", marginTop: 2 } }, (m.postoOrigemNome || "—"), " → ", (m.postoDestinoNome || "—"))),
+                    React.createElement("div", { style: { color: "var(--text-tertiary)", whiteSpace: "nowrap" } }, fmtDate(m.data))))),
+
+            React.createElement("div", { style: { background: "linear-gradient(135deg, var(--primary-dark), var(--primary))", color: "#fff", borderRadius: 12, padding: 20 } },
+                React.createElement("div", { style: { fontSize: 12, color: "#DCEEEC", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".04em" } }, "Resumo executivo"),
+                React.createElement("div", { style: { fontSize: 30, fontWeight: 800, marginTop: 14 } }, equipamentos.length.toLocaleString("pt-BR")),
+                React.createElement("div", { style: { color: "#DCEEEC", fontSize: 13, marginTop: 2 } }, "unidades controladas em ", postos.length, " postos"),
+                React.createElement("div", { style: { marginTop: 18, display: "grid", gap: 9, fontSize: 12.5 } },
+                    React.createElement("div", { style: { display: "flex", justifyContent: "space-between" } }, React.createElement("span", null, "Valor cadastrado"), React.createElement("strong", null, fmtMoeda(valorTotal))),
+                    React.createElement("div", { style: { display: "flex", justifyContent: "space-between" } }, React.createElement("span", null, "Em manutenção"), React.createElement("strong", null, manutencao)),
+                    React.createElement("div", { style: { display: "flex", justifyContent: "space-between" } }, React.createElement("span", null, "Movimentações registradas"), React.createElement("strong", null, movimentacoes.length))))));
 }
 // ---------- Equipamentos ----------
 function EquipamentosView({ equipamentos, postos, persistEquip, postoNome, notify }) {
