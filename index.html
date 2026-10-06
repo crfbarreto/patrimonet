@@ -1737,6 +1737,7 @@ function StatusPill({ status }) {
 }
 // ---------- Dashboard ----------
 function Dashboard({ equipamentos, postos, movimentacoes, postoNome, setTab }) {
+    const [topSelecionado, setTopSelecionado] = useState(null);
     const manutencao = equipamentos.filter((e) => e.status === "manutencao").length;
     const valorTotal = equipamentos.reduce((s, e) => s + (Number(e.valor) || 0), 0);
     const recentes = [...movimentacoes].sort((a, b) => (a.data < b.data ? 1 : -1)).slice(0, 6);
@@ -1785,22 +1786,43 @@ function Dashboard({ equipamentos, postos, movimentacoes, postoNome, setTab }) {
 
             if (!map.has(key)) {
                 map.set(key, {
+                    key,
                     nome,
                     valorUnitario: valor,
                     quantidade: 0,
-                    valorTotal: 0
+                    valorTotal: 0,
+                    porPosto: new Map()
                 });
             }
 
             const item = map.get(key);
             item.quantidade += 1;
             item.valorTotal += valor;
+
+            const postoId = e.postoAtualId || "__sem_posto__";
+            if (!item.porPosto.has(postoId)) {
+                item.porPosto.set(postoId, {
+                    postoId,
+                    postoNome: e.postoAtualId ? postoNome(e.postoAtualId) : "Sem posto / em estoque",
+                    quantidade: 0,
+                    valorTotal: 0
+                });
+            }
+
+            const alocacao = item.porPosto.get(postoId);
+            alocacao.quantidade += 1;
+            alocacao.valorTotal += valor;
         });
 
         return Array.from(map.values())
-            .sort((a, b) => b.quantidade - a.quantidade || b.valorTotal - a.valorTotal)
+            .map((item) => ({
+                ...item,
+                porPosto: Array.from(item.porPosto.values())
+                    .sort((a, b) => b.valorTotal - a.valorTotal || b.quantidade - a.quantidade)
+            }))
+            .sort((a, b) => b.valorTotal - a.valorTotal || b.quantidade - a.quantidade)
             .slice(0, 5);
-    }, [equipamentos]);
+    }, [equipamentos, postos]);
 
     const cards = [
         {
@@ -1927,14 +1949,14 @@ function Dashboard({ equipamentos, postos, movimentacoes, postoNome, setTab }) {
                     React.createElement("div", null,
                         React.createElement("h3", {
                             style: { margin: 0, fontSize: 14.5 }
-                        }, "Top 5 equipamentos ≥ R$ 500"),
+                        }, "Top 5 por valor total"),
                         React.createElement("div", {
                             style: {
                                 fontSize: 11.5,
                                 color: "var(--text-secondary)",
                                 marginTop: 3
                             }
-                        }, "Maiores quantidades entre equipamentos com valor unitário a partir de R$ 500")
+                        }, "Equipamentos com valor unitário a partir de R$ 500, ordenados pelo valor total do grupo")
                     ),
                     React.createElement("div", {
                         style: {
@@ -1956,14 +1978,14 @@ function Dashboard({ equipamentos, postos, movimentacoes, postoNome, setTab }) {
                     })
                     : React.createElement("div", null,
                         topEquipamentosValor.map((item, index) => {
-                            const maxQtd = Math.max(topEquipamentosValor[0]?.quantidade || 1, 1);
-                            const largura = Math.max((item.quantidade / maxQtd) * 100, 3);
+                            const maxValor = Math.max(topEquipamentosValor[0]?.valorTotal || 1, 1);
+                            const largura = Math.max((item.valorTotal / maxValor) * 100, 3);
 
                             return React.createElement("div", {
                                 key: normalize(item.nome) + "-" + item.valorUnitario,
                                 style: {
                                     display: "grid",
-                                    gridTemplateColumns: "34px 1fr 52px",
+                                    gridTemplateColumns: "34px 1fr auto",
                                     gap: 10,
                                     alignItems: "center",
                                     padding: "9px 0",
@@ -2047,20 +2069,116 @@ function Dashboard({ equipamentos, postos, movimentacoes, postoNome, setTab }) {
 
                                 React.createElement("div", {
                                     style: {
-                                        minWidth: 46,
-                                        height: 34,
-                                        borderRadius: 9,
-                                        background: "var(--hover)",
                                         display: "flex",
-                                        alignItems: "center",
-                                        justifyContent: "center",
-                                        fontWeight: 800,
-                                        color: "var(--primary-dark)",
-                                        fontSize: 13
+                                        flexDirection: "column",
+                                        alignItems: "flex-end",
+                                        gap: 5
                                     }
-                                }, item.quantidade)
+                                },
+                                    React.createElement("div", {
+                                        style: {
+                                            minWidth: 46,
+                                            height: 30,
+                                            borderRadius: 9,
+                                            background: "var(--hover)",
+                                            display: "flex",
+                                            alignItems: "center",
+                                            justifyContent: "center",
+                                            fontWeight: 800,
+                                            color: "var(--primary-dark)",
+                                            fontSize: 12.5
+                                        }
+                                    }, item.quantidade, " un."),
+                                    React.createElement("button", {
+                                        type: "button",
+                                        onClick: () => setTopSelecionado(topSelecionado === item.key ? null : item.key),
+                                        style: {
+                                            border: "none",
+                                            background: "transparent",
+                                            color: "var(--primary)",
+                                            fontSize: 10.5,
+                                            fontWeight: 800,
+                                            cursor: "pointer",
+                                            padding: 0,
+                                            whiteSpace: "nowrap"
+                                        }
+                                    }, topSelecionado === item.key ? "Ocultar" : "Ver postos")
+                                )
                             );
-                        })
+                        }),
+                        topSelecionado ? (() => {
+                            const item = topEquipamentosValor.find((x) => x.key === topSelecionado);
+                            if (!item) return null;
+
+                            return React.createElement("div", {
+                                style: {
+                                    marginTop: 12,
+                                    borderTop: "1px solid var(--border)",
+                                    paddingTop: 12
+                                }
+                            },
+                                React.createElement("div", {
+                                    style: {
+                                        display: "flex",
+                                        justifyContent: "space-between",
+                                        alignItems: "center",
+                                        marginBottom: 9
+                                    }
+                                },
+                                    React.createElement("div", {
+                                        style: {
+                                            fontWeight: 800,
+                                            fontSize: 12.5,
+                                            color: "var(--text-primary)"
+                                        }
+                                    }, "Alocação por posto"),
+                                    React.createElement("div", {
+                                        style: {
+                                            fontSize: 10.8,
+                                            color: "var(--text-secondary)"
+                                        }
+                                    }, item.nome)
+                                ),
+                                item.porPosto.map((p) =>
+                                    React.createElement("div", {
+                                        key: p.postoId,
+                                        style: {
+                                            display: "grid",
+                                            gridTemplateColumns: "1fr auto auto",
+                                            gap: 10,
+                                            alignItems: "center",
+                                            padding: "8px 10px",
+                                            marginBottom: 6,
+                                            borderRadius: 8,
+                                            background: "var(--hover)"
+                                        }
+                                    },
+                                        React.createElement("div", {
+                                            style: {
+                                                fontWeight: 700,
+                                                fontSize: 11.8,
+                                                color: "var(--text-primary)"
+                                            }
+                                        }, p.postoNome),
+                                        React.createElement("div", {
+                                            style: {
+                                                fontSize: 11,
+                                                color: "var(--text-secondary)",
+                                                whiteSpace: "nowrap"
+                                            }
+                                        }, p.quantidade, " un."),
+                                        React.createElement("div", {
+                                            style: {
+                                                fontSize: 11.5,
+                                                fontWeight: 800,
+                                                color: "var(--primary-dark)",
+                                                whiteSpace: "nowrap"
+                                            }
+                                        }, fmtMoeda(p.valorTotal))
+                                    )
+                                )
+                            );
+                        })() : null
                     )
             ),
 
