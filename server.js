@@ -333,6 +333,78 @@ async function init() {
 
   console.log("Banco inicializado.");
 
+  const clearAllocationDateKey = "maintenance:clear-allocation-date-2026-10-06-v1";
+  const clearAllocationDateDone = await pool.query(
+    "SELECT value FROM app_storage WHERE key = $1",
+    [clearAllocationDateKey]
+  );
+
+  if (!clearAllocationDateDone.rowCount) {
+    const equipmentResult = await pool.query(
+      "SELECT value FROM app_storage WHERE key = 'equipamentos'"
+    );
+
+    if (equipmentResult.rowCount) {
+      let equipamentos = [];
+      try {
+        equipamentos = JSON.parse(equipmentResult.rows[0].value || "[]");
+      } catch {
+        equipamentos = [];
+      }
+
+      if (Array.isArray(equipamentos)) {
+        let alterados = 0;
+        const atualizados = equipamentos.map((e) => {
+          if ((e.dataEntrega || "") !== "") alterados++;
+          return { ...e, dataEntrega: "" };
+        });
+
+        await pool.query("BEGIN");
+        try {
+          await pool.query(
+            `UPDATE app_storage
+             SET value = $1, updated_at = NOW()
+             WHERE key = 'equipamentos'`,
+            [JSON.stringify(atualizados)]
+          );
+
+          await pool.query(
+            `INSERT INTO app_storage (key, value, updated_at)
+             VALUES ($1, $2, NOW())`,
+            [clearAllocationDateKey, JSON.stringify({
+              appliedAt: new Date().toISOString(),
+              equipamentos: atualizados.length,
+              alterados
+            })]
+          );
+
+          await addAudit({
+            user: null,
+            entityType: "equipamentos",
+            entityLabel: "Todos os equipamentos",
+            action: "UPDATE",
+            field: "Data de entrega no posto",
+            before: alterados + " equipamento(s) com data preenchida",
+            after: "Em branco",
+            metadata: {
+              operacao: "limpeza_em_massa_dataEntrega",
+              totalEquipamentos: atualizados.length,
+              totalAlterados: alterados
+            }
+          });
+
+          await pool.query("COMMIT");
+          console.log(
+            `Data de entrega no posto limpa em ${alterados} equipamento(s) de ${atualizados.length}.`
+          );
+        } catch (error) {
+          await pool.query("ROLLBACK");
+          throw error;
+        }
+      }
+    }
+  }
+
   const migrationKey = "migration:2026-10-06-planilha-oficial-v1";
   const migration = await pool.query("SELECT value FROM app_storage WHERE key = $1", [migrationKey]);
 
