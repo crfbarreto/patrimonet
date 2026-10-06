@@ -1,0 +1,2770 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PatrimôNet</title>
+  <meta name="description" content="Sistema de controle de equipamentos e postos" />
+  <style>
+    html, body, #root { margin:0; min-height:100%; background:#F5F8F8; }
+    body { padding: 18px; }
+    @media (max-width:720px) { body { padding:0; } }
+  </style>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel" data-presets="react">
+
+const { useState, useEffect, useMemo, useRef } = React;
+
+function BaseIcon({size=16, color="currentColor", strokeWidth=2, style, className, children}) {
+  return (
+    <svg className={className} style={style} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {children || <><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M8 12h8"/><path d="M12 8v8"/></>}
+    </svg>
+  );
+}
+const makeIcon = (kind) => (props) => {
+  const paths = {
+    boxes: <><rect x="3" y="7" width="8" height="8" rx="1"/><rect x="13" y="4" width="8" height="8" rx="1"/><rect x="13" y="14" width="8" height="7" rx="1"/></>,
+    pin: <><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></>,
+    swap: <><path d="M4 7h13"/><path d="m14 4 3 3-3 3"/><path d="M20 17H7"/><path d="m10 14-3 3 3 3"/></>,
+    history: <><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><path d="M12 7v5l3 2"/></>,
+    plus: <><path d="M12 5v14"/><path d="M5 12h14"/></>,
+    x: <><path d="m6 6 12 12"/><path d="m18 6-12 12"/></>,
+    search: <><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></>,
+    trash: <><path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="m7 7 1 13h8l1-13"/></>,
+    pencil: <><path d="m4 20 4-1 11-11-3-3L5 16l-1 4Z"/><path d="m14 6 3 3"/></>,
+    tag: <><path d="M20 13 11 4H4v7l9 9 7-7Z"/><circle cx="8" cy="8" r="1"/></>,
+    check: <><circle cx="12" cy="12" r="9"/><path d="m8 12 2.5 2.5L16 9"/></>,
+    alert: <><path d="m12 3 10 18H2L12 3Z"/><path d="M12 9v5"/><path d="M12 18h.01"/></>,
+    wrench: <><path d="M14 6a4 4 0 0 0-5 5L3 17l4 4 6-6a4 4 0 0 0 5-5l-3 3-4-4 3-3Z"/></>,
+    grid: <><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/></>,
+    chevron: <path d="m9 6 6 6-6 6"/>,
+    package: <><path d="m4 7 8-4 8 4-8 4-8-4Z"/><path d="M4 7v10l8 4 8-4V7"/><path d="M12 11v10"/></>,
+    upload: <><path d="M12 16V4"/><path d="m7 9 5-5 5 5"/><path d="M4 20h16"/></>,
+    file: <><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h6"/></>,
+    left: <><path d="M20 12H5"/><path d="m11 6-6 6 6 6"/></>,
+    right: <><path d="M4 12h15"/><path d="m13 6 6 6-6 6"/></>,
+    printer: <><path d="M7 9V4h10v5"/><rect x="6" y="14" width="12" height="6"/><rect x="4" y="9" width="16" height="7" rx="2"/></>,
+    minus: <path d="M5 12h14"/>,
+    download: <><path d="M12 4v12"/><path d="m7 11 5 5 5-5"/><path d="M4 20h16"/></>,
+    truck: <><path d="M3 6h11v10H3z"/><path d="M14 10h4l3 3v3h-7z"/><circle cx="7" cy="18" r="2"/><circle cx="18" cy="18" r="2"/></>
+  };
+  return <BaseIcon {...props}>{paths[kind]}</BaseIcon>;
+};
+const Boxes=makeIcon('boxes'), MapPin=makeIcon('pin'), ArrowLeftRight=makeIcon('swap'), History=makeIcon('history'), Plus=makeIcon('plus'), X=makeIcon('x'), Search=makeIcon('search'), Trash2=makeIcon('trash'), Pencil=makeIcon('pencil'), Tag=makeIcon('tag'), CheckCircle2=makeIcon('check'), AlertTriangle=makeIcon('alert'), Wrench=makeIcon('wrench'), LayoutGrid=makeIcon('grid'), ChevronRight=makeIcon('chevron'), Package=makeIcon('package'), Upload=makeIcon('upload'), FileSpreadsheet=makeIcon('file'), ArrowLeft=makeIcon('left'), ArrowRight=makeIcon('right'), Printer=makeIcon('printer'), Minus=makeIcon('minus'), Download=makeIcon('download'), Truck=makeIcon('truck');
+
+// Compatibilidade com o armazenamento do artefato original.
+window.storage = {
+  async get(key) {
+    const value = localStorage.getItem('patrimonet:' + key);
+    return value === null ? null : { value };
+  },
+  async set(key, value) {
+    localStorage.setItem('patrimonet:' + key, value);
+    return true;
+  }
+};
+
+// ---------- Storage helpers ----------
+const KEYS = { equip: "equipamentos", postos: "postos", mov: "movimentacoes" };
+
+async function loadKey(key, fallback) {
+  try {
+    const res = await window.storage.get(key, true);
+    return res ? JSON.parse(res.value) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+async function saveKey(key, value) {
+  try {
+    await window.storage.set(key, JSON.stringify(value), true);
+  } catch (e) {
+    console.error("Erro ao salvar", key, e);
+  }
+}
+
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+const todayISO = () => new Date().toISOString().slice(0, 10);
+const fmtDate = (iso) => {
+  if (!iso) return "-";
+  const [y, m, d] = iso.split("-");
+  return `${d}/${m}/${y}`;
+};
+
+const fmtMoeda = (v) => {
+  if (v == null || v === "" || isNaN(v)) return "-";
+  return Number(v).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+};
+
+const STATUS = {
+  ativo: { label: "Ativo", color: "var(--success)", bg: "var(--success-bg)" },
+  manutencao: { label: "Em manutenção", color: "var(--warn)", bg: "var(--warn-bg)" },
+  baixa: { label: "Baixado", color: "var(--danger)", bg: "var(--danger-bg)" },
+};
+
+function escapeHtml(str) {
+  return String(str ?? "").replace(/[&<>"']/g, (c) => (
+    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
+  ));
+}
+
+// Abre a listagem de equipamentos numa janela própria, limpa, e dispara a
+// impressão do navegador. Isso evita depender da rolagem/CSS do painel do
+// artefato — a janela nova sempre mostra a lista inteira, sem cortes.
+// Agrupa itens idênticos SEM patrimônio (mesmo nome, categoria, status, posto, valor e
+// observação) em uma única linha com quantidade; itens COM patrimônio continuam individuais,
+// pois o número de patrimônio identifica uma unidade única.
+function agruparEquipamentos(lista) {
+  const individuais = [];
+  const grupos = new Map();
+
+  lista.forEach((e) => {
+    if (e.patrimonio) {
+      individuais.push({ tipo: "individual", equipamento: e });
+      return;
+    }
+    const valorKey = e.valor == null ? "" : String(e.valor);
+    const key = [normalize(e.nome), normalize(e.categoria), e.status, e.postoAtualId || "", valorKey, normalize(e.observacoes), e.dataCadastro || "", e.dataEntrega || ""].join("|");
+    if (!grupos.has(key)) {
+      grupos.set(key, {
+        tipo: "grupo",
+        nome: e.nome,
+        categoria: e.categoria,
+        status: e.status,
+        postoAtualId: e.postoAtualId,
+        valor: e.valor,
+        observacoes: e.observacoes,
+        dataCadastro: e.dataCadastro,
+        dataEntrega: e.dataEntrega,
+        ids: [],
+      });
+    }
+    grupos.get(key).ids.push(e.id);
+  });
+
+  const linhasGrupo = Array.from(grupos.values()).map((g) => ({ ...g, quantidade: g.ids.length }));
+  const todas = [...individuais, ...linhasGrupo];
+  todas.sort((a, b) => {
+    const na = a.tipo === "individual" ? a.equipamento.nome : a.nome;
+    const nb = b.tipo === "individual" ? b.equipamento.nome : b.nome;
+    return na.localeCompare(nb, "pt-BR");
+  });
+  return todas;
+}
+
+// ---------- Exportação para Excel ----------
+// Nota técnica: usamos a biblioteca "exceljs" (e não "xlsx") para exportar, porque a versão
+// gratuita da "xlsx" não grava formatação visual (negrito, cor de fundo, borda) no arquivo —
+// só a versão paga dela suporta isso. A "xlsx" continua sendo usada para LER planilhas na
+// importação, onde não precisamos de estilo, apenas dos valores.
+const BORDA_FINA = { style: "thin", color: { argb: "FFB7B7B7" } };
+const BORDA_COMPLETA = { top: BORDA_FINA, bottom: BORDA_FINA, left: BORDA_FINA, right: BORDA_FINA };
+const COR_CABECALHO = "FFE6E6E6"; // cinza claro
+
+// Monta as linhas de uma aba a partir das linhas já agrupadas da tela.
+// Campos vazios viram `null` (em vez de "") de propósito: assim a célula fica realmente
+// vazia e não recebe borda na formatação (só células preenchidas recebem borda).
+function linhasParaPlanilha(linhas, postoNome) {
+  const cabecalho = ["EQUIPAMENTO", "Nº PATRIMÔNIO", "QUANTIDADE", "CATEGORIA", "POSTO", "STATUS", "VALOR UNITÁRIO", "VALOR TOTAL", "OBSERVAÇÕES"];
+  const corpo = linhas.map((l) => {
+    if (l.tipo === "individual") {
+      const e = l.equipamento;
+      return [
+        e.nome,
+        e.patrimonio || null,
+        1,
+        e.categoria || null,
+        postoNome(e.postoAtualId),
+        STATUS[e.status]?.label || e.status,
+        e.valor != null ? e.valor : null,
+        e.valor != null ? e.valor : null,
+        e.observacoes || null,
+      ];
+    }
+    const g = l;
+    return [
+      g.nome,
+      null,
+      g.quantidade,
+      g.categoria || null,
+      postoNome(g.postoAtualId),
+      STATUS[g.status]?.label || g.status,
+      g.valor != null ? g.valor : null,
+      g.valor != null ? g.valor * g.quantidade : null,
+      g.observacoes || null,
+    ];
+  });
+  return { cabecalho, corpo };
+}
+
+// Ajusta a largura das colunas com base no conteúdo, para a planilha sair legível.
+function calcularLarguras(dados, minimos) {
+  return minimos.map((min, i) => {
+    const maior = dados.reduce((max, l) => {
+      const v = l[i] == null ? "" : String(l[i]);
+      return Math.max(max, v.length);
+    }, min);
+    return Math.min(maior + 2, 45);
+  });
+}
+
+// Escreve um conjunto de linhas (cabeçalho + corpo + total) numa aba, já formatada:
+// cabeçalho em cinza claro e negrito, borda em todas as células preenchidas, moeda em R$.
+function escreverAba(ws, cabecalho, corpo, larguras, colunasMoeda = []) {
+  ws.columns = larguras.map((w) => ({ width: w }));
+
+  const linhaCabecalho = ws.addRow(cabecalho);
+  linhaCabecalho.eachCell({ includeEmpty: true }, (cell) => {
+    cell.font = { bold: true };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COR_CABECALHO } };
+    cell.border = BORDA_COMPLETA;
+  });
+
+  corpo.forEach((linha) => {
+    const row = ws.addRow(linha);
+    row.eachCell({ includeEmpty: false }, (cell) => {
+      cell.border = BORDA_COMPLETA;
+    });
+    colunasMoeda.forEach((col) => {
+      const cell = row.getCell(col);
+      if (typeof cell.value === "number") cell.numFmt = "R$ #,##0.00";
+    });
+  });
+
+  ws.views = [{ state: "frozen", ySplit: 1 }];
+  ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: cabecalho.length } };
+}
+
+// Baixa o workbook do ExcelJS no navegador (equivalente ao XLSX.writeFile, que não existe aqui).
+async function baixarWorkbook(wb, nomeArquivo) {
+  const buffer = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = nomeArquivo;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+
+async function exportarPostoParaExcel(titulo, linhas, postoNome) {
+  const { cabecalho, corpo } = linhasParaPlanilha(linhas, postoNome);
+  const totalGeral = corpo.reduce((s, l) => s + (typeof l[7] === "number" ? l[7] : 0), 0);
+  const totalUnidades = corpo.reduce((s, l) => s + (typeof l[2] === "number" ? l[2] : 0), 0);
+
+  const corpoComTotal = [...corpo];
+  if (totalGeral > 0 || totalUnidades > 0) {
+    corpoComTotal.push([null, null, null, null, null, null, null, null, null]);
+    corpoComTotal.push(["TOTAL", null, totalUnidades, null, null, null, null, totalGeral || null, null]);
+  }
+
+  const wb = new ExcelJS.Workbook();
+  const nomeAba = titulo.replace(/[\\\/\?\*\[\]:]/g, "-").slice(0, 31) || "Equipamentos";
+  const ws = wb.addWorksheet(nomeAba);
+  const larguras = calcularLarguras([cabecalho, ...corpoComTotal], [26, 14, 11, 16, 20, 14, 15, 14, 24]);
+  escreverAba(ws, cabecalho, corpoComTotal, larguras, [7, 8]);
+
+  // deixa a linha de TOTAL em negrito
+  if (totalGeral > 0 || totalUnidades > 0) {
+    ws.getRow(ws.rowCount).font = { bold: true };
+  }
+
+  const hoje = new Date().toISOString().slice(0, 10);
+  await baixarWorkbook(wb, `equipamentos-${titulo.replace(/[^\w\-]+/g, "-").toLowerCase()}-${hoje}.xlsx`);
+}
+
+// Exporta tudo: uma aba por posto (mesmo formato da planilha de origem) + uma aba resumo.
+async function exportarTudoParaExcel(equipamentos, postos, postoNome, agruparLinhas) {
+  const wb = new ExcelJS.Workbook();
+
+  // aba resumo
+  const resumoLinhas = postos.map((p) => {
+    const itens = equipamentos.filter((e) => e.postoAtualId === p.id);
+    const valor = itens.reduce((s, e) => s + (typeof e.valor === "number" ? e.valor : 0), 0);
+    return [p.nome, itens.length, itens.filter((e) => e.patrimonio).length, valor || null];
+  });
+  const semPosto = equipamentos.filter((e) => !e.postoAtualId);
+  if (semPosto.length > 0) {
+    const valor = semPosto.reduce((s, e) => s + (typeof e.valor === "number" ? e.valor : 0), 0);
+    resumoLinhas.push(["(Sem posto / em estoque)", semPosto.length, semPosto.filter((e) => e.patrimonio).length, valor || null]);
+  }
+  const cabecalhoResumo = ["POSTO", "TOTAL DE EQUIPAMENTOS", "COM PATRIMÔNIO", "VALOR TOTAL"];
+  const corpoResumo = [
+    ...resumoLinhas,
+    [null, null, null, null],
+    ["TOTAL GERAL", equipamentos.length, equipamentos.filter((e) => e.patrimonio).length, equipamentos.reduce((s, e) => s + (typeof e.valor === "number" ? e.valor : 0), 0) || null],
+  ];
+  const wsResumo = wb.addWorksheet("RESUMO");
+  const largurasResumo = calcularLarguras([cabecalhoResumo, ...corpoResumo], [28, 22, 18, 16]);
+  escreverAba(wsResumo, cabecalhoResumo, corpoResumo, largurasResumo, [4]);
+  wsResumo.getRow(wsResumo.rowCount).font = { bold: true };
+
+  // uma aba por posto
+  const usados = new Set(["RESUMO"]);
+  const grupos = [
+    ...postos.map((p) => ({ nome: p.nome, itens: equipamentos.filter((e) => e.postoAtualId === p.id) })),
+    ...(semPosto.length > 0 ? [{ nome: "SEM POSTO", itens: semPosto }] : []),
+  ];
+
+  grupos.forEach(({ nome, itens }) => {
+    if (itens.length === 0) return;
+    const linhas = agruparLinhas(itens);
+    const { cabecalho, corpo } = linhasParaPlanilha(linhas, postoNome);
+    const totalUnidades = corpo.reduce((s, l) => s + (typeof l[2] === "number" ? l[2] : 0), 0);
+    const totalValor = corpo.reduce((s, l) => s + (typeof l[7] === "number" ? l[7] : 0), 0);
+    const corpoComTotal = [
+      ...corpo,
+      [null, null, null, null, null, null, null, null, null],
+      ["TOTAL", null, totalUnidades, null, null, null, null, totalValor || null, null],
+    ];
+
+    // nomes de aba no Excel: máx. 31 chars, sem caracteres especiais, e únicos
+    let nomeAba = nome.replace(/[\\\/\?\*\[\]:]/g, "-").slice(0, 31) || "POSTO";
+    let sufixo = 2;
+    while (usados.has(nomeAba)) {
+      nomeAba = `${nome.slice(0, 28)}-${sufixo++}`;
+    }
+    usados.add(nomeAba);
+
+    const ws = wb.addWorksheet(nomeAba);
+    const larguras = calcularLarguras([cabecalho, ...corpoComTotal], [26, 14, 11, 16, 20, 14, 15, 14, 24]);
+    escreverAba(ws, cabecalho, corpoComTotal, larguras, [7, 8]);
+    ws.getRow(ws.rowCount).font = { bold: true };
+  });
+
+  const hoje = new Date().toISOString().slice(0, 10);
+  await baixarWorkbook(wb, `controle-de-equipamentos-${hoje}.xlsx`);
+}
+
+function imprimirListagemEquipamentos(titulo, linhas, valorTotal) {
+  const dataStr = new Date().toLocaleDateString("pt-BR");
+
+  const linhasHtml = linhas.map((l) => {
+    if (l.tipo === "individual") {
+      const e = l.equipamento;
+      return `<tr>
+        <td>${escapeHtml(e.nome)}</td>
+        <td>${e.patrimonio ? "Nº " + escapeHtml(e.patrimonio) : "-"}</td>
+        <td>${escapeHtml(e.categoria || "-")}</td>
+        <td>${escapeHtml(STATUS[e.status]?.label || e.status)}</td>
+        <td>${escapeHtml(fmtMoeda(e.valor))}</td>
+      </tr>`;
+    }
+    const g = l;
+    const valorTxt = g.valor != null
+      ? `${fmtMoeda(g.valor)} × ${g.quantidade} = ${fmtMoeda(g.valor * g.quantidade)}`
+      : "-";
+    return `<tr>
+      <td>${escapeHtml(g.nome)}</td>
+      <td>Qtd ${g.quantidade}</td>
+      <td>${escapeHtml(g.categoria || "-")}</td>
+      <td>${escapeHtml(STATUS[g.status]?.label || g.status)}</td>
+      <td>${escapeHtml(valorTxt)}</td>
+    </tr>`;
+  }).join("");
+
+  const totalRow = valorTotal > 0
+    ? `<tr class="total-row"><td colspan="4">Valor total</td><td>${escapeHtml(fmtMoeda(valorTotal))}</td></tr>`
+    : "";
+
+  const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<title>${escapeHtml(titulo)}</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: Arial, Helvetica, sans-serif; padding: 28px; color: #16302E; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .meta { font-size: 12px; color: #667; margin-bottom: 18px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid #ddd; }
+  th { text-transform: uppercase; font-size: 10px; letter-spacing: .04em; color: #556; background: #f2f6f5; }
+  .total-row td { font-weight: 700; border-top: 2px solid #333; }
+  @media print { body { padding: 10mm; } }
+</style>
+</head>
+<body>
+  <h1>Listagem de equipamentos — ${escapeHtml(titulo)}</h1>
+  <div class="meta">Emitido em ${dataStr} · ${linhas.length} linha${linhas.length !== 1 ? "s" : ""}</div>
+  <table>
+    <thead>
+      <tr><th>Equipamento</th><th>Patrimônio / Qtd</th><th>Categoria</th><th>Status</th><th>Valor</th></tr>
+    </thead>
+    <tbody>${linhasHtml}</tbody>
+    ${totalRow ? `<tfoot>${totalRow}</tfoot>` : ""}
+  </table>
+</body>
+</html>`;
+
+  // O artefato roda dentro de um iframe isolado, onde window.open costuma ser bloqueado.
+  // Estratégia: iframe oculto no próprio documento -> print(). Se falhar, baixa o arquivo.
+  return new Promise((resolve) => {
+    let finalizado = false;
+
+    const baixarComoArquivo = () => {
+      try {
+        const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `listagem-${titulo.replace(/[^\w\-]+/g, "-").toLowerCase()}.html`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 4000);
+        resolve("download");
+      } catch (e) {
+        resolve("erro");
+      }
+    };
+
+    try {
+      const iframe = document.createElement("iframe");
+      iframe.setAttribute("aria-hidden", "true");
+      iframe.style.position = "fixed";
+      iframe.style.right = "0";
+      iframe.style.bottom = "0";
+      iframe.style.width = "0";
+      iframe.style.height = "0";
+      iframe.style.border = "0";
+      iframe.style.opacity = "0";
+
+      iframe.onload = () => {
+        if (finalizado) return;
+        finalizado = true;
+        try {
+          const win = iframe.contentWindow;
+          win.focus();
+          win.print();
+          // remove o iframe depois que a caixa de impressão é resolvida
+          setTimeout(() => {
+            if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+          }, 1500);
+          resolve("print");
+        } catch (e) {
+          if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+          baixarComoArquivo();
+        }
+      };
+
+      document.body.appendChild(iframe);
+      iframe.srcdoc = html;
+
+      // se o iframe não carregar (bloqueio de sandbox), cai para o download
+      setTimeout(() => {
+        if (finalizado) return;
+        finalizado = true;
+        if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+        baixarComoArquivo();
+      }, 2500);
+    } catch (e) {
+      baixarComoArquivo();
+    }
+  });
+}
+
+function App() {
+  const [tab, setTab] = useState("dashboard");
+  const [loading, setLoading] = useState(true);
+  const [equipamentos, setEquipamentos] = useState([]);
+  const [postos, setPostos] = useState([]);
+  const [movimentacoes, setMovimentacoes] = useState([]);
+  const [toast, setToast] = useState(null);
+
+  useEffect(() => {
+    (async () => {
+      const [e, p, m] = await Promise.all([
+        loadKey(KEYS.equip, []),
+        loadKey(KEYS.postos, []),
+        loadKey(KEYS.mov, []),
+      ]);
+      setEquipamentos(e);
+      setPostos(p);
+      setMovimentacoes(m);
+      setLoading(false);
+    })();
+  }, []);
+
+  function notify(msg) {
+    setToast(msg);
+    setTimeout(() => setToast(null), 2600);
+  }
+
+  async function persistEquip(next) {
+    setEquipamentos(next);
+    await saveKey(KEYS.equip, next);
+  }
+  async function persistPostos(next) {
+    setPostos(next);
+    await saveKey(KEYS.postos, next);
+  }
+  async function persistMov(next) {
+    setMovimentacoes(next);
+    await saveKey(KEYS.mov, next);
+  }
+
+  const postoNome = (id) => postos.find((p) => p.id === id)?.nome || "Sem posto";
+
+  const nav = [
+    { id: "dashboard", label: "Visão geral", icon: LayoutGrid },
+    { id: "equipamentos", label: "Equipamentos", icon: Boxes },
+    { id: "postos", label: "Postos", icon: MapPin },
+    { id: "movimentar", label: "Movimentar", icon: ArrowLeftRight },
+    { id: "historico", label: "Histórico", icon: History },
+    { id: "entregas", label: "Entregas", icon: Truck },
+    { id: "importar", label: "Importar planilha", icon: Upload },
+  ];
+
+  if (loading) {
+    return (
+      <Shell>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--text-secondary)", fontFamily: "var(--font-body)" }}>
+          Carregando dados…
+        </div>
+      </Shell>
+    );
+  }
+
+  return (
+    <Shell>
+      <div className="app-body" style={{ display: "flex", height: "100%", minHeight: 640 }}>
+        {/* Sidebar */}
+        <aside
+          className="app-sidebar"
+          style={{
+            width: 216,
+            flexShrink: 0,
+            background: "var(--surface)",
+            borderRight: "1px solid var(--border)",
+            padding: "20px 12px",
+            display: "flex",
+            flexDirection: "column",
+            gap: 4,
+          }}
+        >
+          <div className="brand-row" style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 10px 20px" }}>
+            <div style={{ width: 30, height: 30, borderRadius: 7, background: "var(--primary)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Tag size={16} color="#fff" strokeWidth={2.2} />
+            </div>
+            <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 15, color: "var(--text-primary)", letterSpacing: "-0.01em" }}>
+              PatrimôNet
+            </div>
+          </div>
+          {nav.map((n) => {
+            const Icon = n.icon;
+            const active = tab === n.id;
+            return (
+              <button
+                key={n.id}
+                className="nav-btn"
+                onClick={() => setTab(n.id)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "9px 12px",
+                  borderRadius: 8,
+                  border: "none",
+                  cursor: "pointer",
+                  background: active ? "var(--primary-soft)" : "transparent",
+                  color: active ? "var(--primary)" : "var(--text-secondary)",
+                  fontFamily: "var(--font-body)",
+                  fontWeight: active ? 600 : 500,
+                  fontSize: 13.5,
+                  textAlign: "left",
+                  transition: "background 0.15s, color 0.15s",
+                }}
+                onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = "var(--hover)"; }}
+                onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = "transparent"; }}
+              >
+                <Icon size={16} strokeWidth={2} />
+                {n.label}
+              </button>
+            );
+          })}
+
+          <div className="footer-info" style={{ marginTop: "auto", padding: "10px 10px 2px", fontSize: 11, color: "var(--text-tertiary)", fontFamily: "var(--font-body)", lineHeight: 1.5 }}>
+            {equipamentos.length} equipamento{equipamentos.length !== 1 ? "s" : ""} · {postos.length} posto{postos.length !== 1 ? "s" : ""}
+          </div>
+        </aside>
+
+        {/* Main */}
+        <main className="app-main" style={{ flex: 1, overflow: "auto", padding: "28px 32px", background: "var(--bg)" }}>
+          {tab === "dashboard" && (
+            <Dashboard equipamentos={equipamentos} postos={postos} movimentacoes={movimentacoes} postoNome={postoNome} setTab={setTab} />
+          )}
+          {tab === "equipamentos" && (
+            <EquipamentosView
+              equipamentos={equipamentos}
+              postos={postos}
+              persistEquip={persistEquip}
+              postoNome={postoNome}
+              notify={notify}
+            />
+          )}
+          {tab === "postos" && (
+            <PostosView postos={postos} equipamentos={equipamentos} persistPostos={persistPostos} notify={notify} />
+          )}
+          {tab === "movimentar" && (
+            <MovimentarView
+              equipamentos={equipamentos}
+              postos={postos}
+              persistEquip={persistEquip}
+              movimentacoes={movimentacoes}
+              persistMov={persistMov}
+              postoNome={postoNome}
+              notify={notify}
+            />
+          )}
+          {tab === "historico" && (
+            <HistoricoView movimentacoes={movimentacoes} equipamentos={equipamentos} postoNome={postoNome} />
+          )}
+          {tab === "entregas" && (
+            <EntregasView equipamentos={equipamentos} postoNome={postoNome} />
+          )}
+          {tab === "importar" && (
+            <ImportarView
+              equipamentos={equipamentos}
+              postos={postos}
+              persistEquip={persistEquip}
+              persistPostos={persistPostos}
+              notify={notify}
+            />
+          )}
+        </main>
+      </div>
+
+      {toast && (
+        <div
+          className="toast-msg"
+          style={{
+            position: "absolute",
+            bottom: 20,
+            left: "50%",
+            transform: "translateX(-50%)",
+            background: "var(--text-primary)",
+            color: "#fff",
+            padding: "10px 18px",
+            borderRadius: 8,
+            fontFamily: "var(--font-body)",
+            fontSize: 13,
+            fontWeight: 500,
+            boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            zIndex: 50,
+          }}
+        >
+          <CheckCircle2 size={15} color="var(--success-light)" />
+          {toast}
+        </div>
+      )}
+    </Shell>
+  );
+}
+
+function Shell({ children }) {
+  return (
+    <div
+      className="app-shell"
+      style={{
+        position: "relative",
+        fontFamily: "var(--font-body)",
+        background: "var(--bg)",
+        borderRadius: 14,
+        overflow: "hidden",
+        border: "1px solid var(--border)",
+        minHeight: 640,
+      }}
+    >
+      <style>{`
+        :root {
+          --bg: #F5F8F8;
+          --surface: #FFFFFF;
+          --primary: #0F6E6E;
+          --primary-dark: #0A4F4F;
+          --primary-soft: #E3F0EF;
+          --accent: #D69A34;
+          --accent-soft: #FBF0DD;
+          --text-primary: #16302E;
+          --text-secondary: #5C7876;
+          --text-tertiary: #93ACA9;
+          --border: #DEE9E7;
+          --hover: #EEF5F4;
+          --success: #2F8F5B;
+          --success-light: #7CD6A3;
+          --success-bg: #E7F5EC;
+          --warn: #B5791E;
+          --warn-bg: #FBF0DD;
+          --danger: #C1443D;
+          --danger-bg: #FBEAE9;
+          --font-display: 'Space Grotesk', 'Archivo', sans-serif;
+          --font-body: 'Inter', system-ui, sans-serif;
+          --font-mono: 'IBM Plex Mono', monospace;
+        }
+        @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap');
+        * { box-sizing: border-box; }
+        input, select, textarea, button { font-family: var(--font-body); }
+        input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-thumb { background: #C9DBD9; border-radius: 8px; }
+
+        /* ---------- Impressão ---------- */
+        .print-header { display: none; }
+        @media print {
+          .app-sidebar, .no-print { display: none !important; }
+          .app-shell { border: none !important; border-radius: 0 !important; min-height: auto !important; }
+          .app-body { display: block !important; height: auto !important; }
+          .app-main { overflow: visible !important; padding: 0 !important; }
+          .print-header { display: block !important; margin-bottom: 14px; }
+          table { font-size: 11px !important; }
+          th, td { padding: 6px 10px !important; }
+        }
+
+        /* ---------- Responsivo (celular) ---------- */
+        @media (max-width: 720px) {
+          .app-shell { border-radius: 0 !important; border: none !important; min-height: 100vh !important; }
+          .app-body { flex-direction: column !important; height: auto !important; min-height: 100vh !important; }
+          .app-sidebar {
+            width: 100% !important;
+            flex-direction: row !important;
+            align-items: center !important;
+            overflow-x: auto;
+            border-right: none !important;
+            border-top: 1px solid var(--border);
+            padding: 6px 8px !important;
+            gap: 2px !important;
+            order: 2;
+            position: sticky;
+            bottom: 0;
+            z-index: 10;
+            flex-shrink: 0;
+          }
+          .app-sidebar .brand-row, .app-sidebar .footer-info { display: none !important; }
+          .nav-btn {
+            flex-direction: column !important;
+            gap: 2px !important;
+            padding: 7px 10px !important;
+            font-size: 10.5px !important;
+            white-space: nowrap;
+            flex: 1;
+            text-align: center !important;
+            justify-content: center !important;
+          }
+          .app-main { order: 1; padding: 16px !important; }
+          .grid-2, .grid-3, .grid-4, .top3-grid, .mode-select-grid {
+            grid-template-columns: 1fr !important;
+          }
+          .swap-grid { grid-template-columns: 1fr !important; }
+          .swap-grid svg { transform: rotate(90deg); margin: 4px auto !important; }
+          .section-header-row { flex-direction: column !important; align-items: flex-start !important; gap: 10px; }
+          .section-header-row > *:last-child { width: 100%; }
+          .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+          .table-scroll table { min-width: 640px; }
+          .modal-box { width: 94vw !important; padding: 18px !important; }
+          .filters-row { flex-direction: column !important; align-items: stretch !important; }
+          .filters-row > * { max-width: 100% !important; width: 100% !important; }
+          .toast-msg { bottom: 76px !important; max-width: 88vw; }
+        }
+      `}</style>
+      {children}
+    </div>
+  );
+}
+
+// ---------- shared UI bits ----------
+function SectionHeader({ title, subtitle, action }) {
+  return (
+    <div className="section-header-row" style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", marginBottom: 22 }}>
+      <div>
+        <h1 style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 700, color: "var(--text-primary)", margin: 0, letterSpacing: "-0.01em" }}>
+          {title}
+        </h1>
+        {subtitle && <p style={{ color: "var(--text-secondary)", fontSize: 13.5, margin: "4px 0 0" }}>{subtitle}</p>}
+      </div>
+      {action}
+    </div>
+  );
+}
+
+function PrimaryButton({ children, onClick, icon: Icon, type = "button", disabled }) {
+  return (
+    <button
+      type={type}
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 7,
+        background: disabled ? "#B9CFCD" : "var(--primary)",
+        color: "#fff",
+        border: "none",
+        borderRadius: 8,
+        padding: "9px 16px",
+        fontSize: 13.5,
+        fontWeight: 600,
+        cursor: disabled ? "not-allowed" : "pointer",
+        transition: "background 0.15s",
+      }}
+      onMouseEnter={(e) => { if (!disabled) e.currentTarget.style.background = "var(--primary-dark)"; }}
+      onMouseLeave={(e) => { if (!disabled) e.currentTarget.style.background = "var(--primary)"; }}
+    >
+      {Icon && <Icon size={15} strokeWidth={2.3} />}
+      {children}
+    </button>
+  );
+}
+
+function Field({ label, children }) {
+  return (
+    <label style={{ display: "flex", flexDirection: "column", gap: 5, fontSize: 12.5, color: "var(--text-secondary)", fontWeight: 600 }}>
+      {label}
+      {children}
+    </label>
+  );
+}
+
+const inputStyle = {
+  border: "1px solid var(--border)",
+  borderRadius: 7,
+  padding: "8px 10px",
+  fontSize: 13.5,
+  color: "var(--text-primary)",
+  outline: "none",
+  background: "#fff",
+};
+
+function Modal({ title, onClose, children, width = 440 }) {
+  return (
+    <div
+      style={{
+        position: "fixed", inset: 0, background: "rgba(15,40,38,0.32)",
+        display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100,
+      }}
+      onClick={onClose}
+    >
+      <div
+        className="modal-box"
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width, maxWidth: "90vw", maxHeight: "85vh", overflow: "auto",
+          background: "var(--surface)", borderRadius: 14, padding: 24,
+          boxShadow: "0 20px 60px rgba(10,40,38,0.25)",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
+          <h2 style={{ fontFamily: "var(--font-display)", fontSize: 17, fontWeight: 700, margin: 0, color: "var(--text-primary)" }}>{title}</h2>
+          <button onClick={onClose} style={{ background: "var(--hover)", border: "none", borderRadius: 6, width: 26, height: 26, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <X size={14} color="var(--text-secondary)" />
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function EmptyState({ icon: Icon, title, subtitle }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "56px 20px", color: "var(--text-tertiary)", textAlign: "center" }}>
+      <div style={{ width: 44, height: 44, borderRadius: 12, background: "var(--primary-soft)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 14 }}>
+        <Icon size={20} color="var(--primary)" />
+      </div>
+      <div style={{ fontWeight: 600, color: "var(--text-secondary)", fontSize: 14 }}>{title}</div>
+      {subtitle && <div style={{ fontSize: 12.5, marginTop: 4, maxWidth: 280 }}>{subtitle}</div>}
+    </div>
+  );
+}
+
+function AssetTag({ value }) {
+  if (!value) {
+    return (
+      <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--text-tertiary)", fontStyle: "italic" }}>
+        sem patrimônio
+      </span>
+    );
+  }
+  return (
+    <span
+      style={{
+        fontFamily: "var(--font-mono)", fontSize: 11.5, fontWeight: 600, color: "var(--primary-dark)",
+        background: "var(--primary-soft)", border: "1px dashed #A9CFCC", borderRadius: 5,
+        padding: "2px 7px", letterSpacing: "0.02em", whiteSpace: "nowrap",
+      }}
+    >
+      Nº {value}
+    </span>
+  );
+}
+
+function StatusPill({ status }) {
+  const s = STATUS[status] || STATUS.ativo;
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11.5, fontWeight: 600, color: s.color, background: s.bg, padding: "3px 9px", borderRadius: 20 }}>
+      <span style={{ width: 6, height: 6, borderRadius: "50%", background: s.color }} />
+      {s.label}
+    </span>
+  );
+}
+
+// ---------- Dashboard ----------
+function Dashboard({ equipamentos, postos, movimentacoes, postoNome, setTab }) {
+  const semPatrimonio = equipamentos.filter((e) => !e.patrimonio).length;
+  const recentes = [...movimentacoes].sort((a, b) => (a.data < b.data ? 1 : -1)).slice(0, 6);
+
+  const porPosto = useMemo(() => {
+    const map = {};
+    postos.forEach((p) => (map[p.id] = 0));
+    equipamentos.forEach((e) => {
+      if (e.postoAtualId && map[e.postoAtualId] !== undefined) map[e.postoAtualId]++;
+    });
+    return postos.map((p) => ({ posto: p, count: map[p.id] || 0 })).sort((a, b) => b.count - a.count);
+  }, [postos, equipamentos]);
+
+  // agrupa por tipo de equipamento (ignorando maiúsculas/espaços) para o ranking
+  const rankingTipos = useMemo(() => {
+    const map = new Map();
+    equipamentos.forEach((e) => {
+      const key = normalize(e.nome);
+      if (!key) return;
+      if (!map.has(key)) map.set(key, { nome: e.nome.trim(), count: 0 });
+      map.get(key).count++;
+    });
+    return Array.from(map.values()).sort((a, b) => b.count - a.count);
+  }, [equipamentos]);
+
+  const top3 = rankingTipos.slice(0, 3);
+  const medalha = ["#D6A94A", "#A6ACB8", "#B8794A"]; // ouro, prata, bronze
+
+  const cards = [
+    { label: "Equipamentos cadastrados", value: equipamentos.length, icon: Boxes, color: "var(--primary)" },
+    { label: "Postos cadastrados", value: postos.length, icon: MapPin, color: "var(--accent)" },
+    { label: "Tipos de equipamento distintos", value: rankingTipos.length, icon: LayoutGrid, color: "var(--primary-dark)" },
+  ];
+
+  return (
+    <div>
+      <SectionHeader title="Visão geral" subtitle="Panorama do parque de equipamentos e postos" />
+
+      <div className="grid-3" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, marginBottom: 18 }}>
+        {cards.map((c) => (
+          <div key={c.label} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+              <c.icon size={17} color={c.color} strokeWidth={2.2} />
+            </div>
+            <div style={{ fontFamily: "var(--font-display)", fontSize: 24, fontWeight: 700, color: "var(--text-primary)" }}>{c.value}</div>
+            <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 2 }}>{c.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {semPatrimonio > 0 && (
+        <div style={{ display: "flex", alignItems: "center", gap: 9, background: "var(--warn-bg)", border: "1px solid #EAD7AC", borderRadius: 10, padding: "10px 14px", marginBottom: 22, fontSize: 13, color: "#8A5D14" }}>
+          <AlertTriangle size={15} />
+          {semPatrimonio} equipamento{semPatrimonio !== 1 ? "s" : ""} sem número de patrimônio cadastrado.
+        </div>
+      )}
+
+      {top3.length > 0 && (
+        <div style={{
+          background: "linear-gradient(135deg, var(--primary-dark), var(--primary))",
+          borderRadius: 14, padding: "22px 24px", marginBottom: 22,
+          display: "flex", flexDirection: "column", gap: 16,
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <Package size={16} color="#EAF6F4" />
+            <h3 style={{ fontFamily: "var(--font-display)", fontSize: 14, fontWeight: 700, margin: 0, color: "#EAF6F4", letterSpacing: "0.01em" }}>
+              Equipamentos que mais temos
+            </h3>
+          </div>
+          <div className="top3-grid" style={{ display: "grid", gridTemplateColumns: `repeat(${top3.length}, 1fr)`, gap: 16 }}>
+            {top3.map((t, i) => (
+              <div key={t.nome} style={{ background: "rgba(255,255,255,0.08)", borderRadius: 12, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 8 }}>
+                <div style={{
+                  width: 26, height: 26, borderRadius: "50%", background: medalha[i],
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 12.5, color: "#26221A",
+                }}>
+                  {i + 1}
+                </div>
+                <div style={{ fontFamily: "var(--font-display)", fontSize: 32, fontWeight: 700, color: "#fff", lineHeight: 1 }}>
+                  {t.count}
+                </div>
+                <div style={{ fontSize: 13, color: "#DCEEEC", fontWeight: 600, textTransform: "capitalize" }}>
+                  {t.nome.toLowerCase()}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="grid-2" style={{ display: "grid", gridTemplateColumns: "1.1fr 1fr", gap: 18 }}>
+        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 18 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+            <h3 style={{ fontFamily: "var(--font-display)", fontSize: 14.5, fontWeight: 700, margin: 0 }}>Últimas movimentações</h3>
+            <button onClick={() => setTab("historico")} style={{ background: "none", border: "none", color: "var(--primary)", fontSize: 12, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 2 }}>
+              Ver tudo <ChevronRight size={13} />
+            </button>
+          </div>
+          {recentes.length === 0 ? (
+            <EmptyState icon={ArrowLeftRight} title="Nenhuma movimentação ainda" subtitle="As movimentações entre postos aparecerão aqui." />
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {recentes.map((m) => {
+                const eq = equipamentos.find((e) => e.id === m.equipamentoId);
+                const nomeExibir = m.equipamentoNome || eq?.nome || "Equipamento removido";
+                const qtd = m.quantidade || 1;
+                return (
+                  <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12.5 }}>
+                    <div style={{ width: 26, height: 26, borderRadius: 7, background: "var(--primary-soft)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                      <ArrowLeftRight size={12} color="var(--primary)" />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>{nomeExibir}{qtd > 1 ? ` (×${qtd})` : ""}</span>
+                      <span style={{ color: "var(--text-secondary)" }}>
+                        {" "}· {m.postoOrigemNome} → {m.postoDestinoNome}
+                      </span>
+                    </div>
+                    <span style={{ color: "var(--text-tertiary)", flexShrink: 0 }}>{fmtDate(m.data)}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 18 }}>
+          <h3 style={{ fontFamily: "var(--font-display)", fontSize: 14.5, fontWeight: 700, margin: "0 0 14px" }}>Equipamentos por posto</h3>
+          {postos.length === 0 ? (
+            <EmptyState icon={MapPin} title="Nenhum posto cadastrado" subtitle="Cadastre um posto para organizar seus equipamentos." />
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
+              {porPosto.map(({ posto, count }) => {
+                const max = Math.max(...porPosto.map((x) => x.count), 1);
+                return (
+                  <div key={posto.id}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 4 }}>
+                      <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>{posto.nome}</span>
+                      <span style={{ color: "var(--text-secondary)" }}>{count}</span>
+                    </div>
+                    <div style={{ height: 6, background: "var(--hover)", borderRadius: 4, overflow: "hidden" }}>
+                      <div style={{ height: "100%", width: `${(count / max) * 100}%`, background: "var(--primary)", borderRadius: 4, transition: "width 0.3s" }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------- Equipamentos ----------
+function EquipamentosView({ equipamentos, postos, persistEquip, postoNome, notify }) {
+  const [modal, setModal] = useState(null); // null | 'new' | equipamento object
+  const [grupoEditando, setGrupoEditando] = useState(null); // grupo (itens sem patrimônio agrupados) em edição
+  const [query, setQuery] = useState("");
+  const [filterStatus, setFilterStatus] = useState("todos");
+  const [postoFiltro, setPostoFiltro] = useState(null); // null = tela de seleção | posto.id | "__sem_posto__" | "__todos__"
+  const [buscaPosto, setBuscaPosto] = useState("");
+
+  const contagemPorPosto = useMemo(() => {
+    const map = {};
+    equipamentos.forEach((e) => {
+      const key = e.postoAtualId || "__sem_posto__";
+      map[key] = (map[key] || 0) + 1;
+    });
+    return map;
+  }, [equipamentos]);
+
+  const postosFiltrados = postos.filter((p) => p.nome.toLowerCase().includes(buscaPosto.toLowerCase()));
+  const semPostoCount = contagemPorPosto["__sem_posto__"] || 0;
+
+  const equipamentosDoPosto = useMemo(() => {
+    if (postoFiltro === null) return [];
+    if (postoFiltro === "__todos__") return equipamentos;
+    if (postoFiltro === "__sem_posto__") return equipamentos.filter((e) => !e.postoAtualId);
+    return equipamentos.filter((e) => e.postoAtualId === postoFiltro);
+  }, [equipamentos, postoFiltro]);
+
+  const filtered = equipamentosDoPosto.filter((e) => {
+    const matchesQuery =
+      e.nome.toLowerCase().includes(query.toLowerCase()) ||
+      (e.patrimonio || "").toLowerCase().includes(query.toLowerCase()) ||
+      (e.categoria || "").toLowerCase().includes(query.toLowerCase());
+    const matchesStatus = filterStatus === "todos" || e.status === filterStatus;
+    return matchesQuery && matchesStatus;
+  });
+
+  // agrupa itens idênticos SEM patrimônio (mesmo nome, categoria, status, posto, valor e observação)
+  // em uma única linha com quantidade; itens COM patrimônio continuam individuais, pois o
+  // número de patrimônio identifica uma unidade única.
+  const linhasExibidas = useMemo(() => agruparEquipamentos(filtered), [filtered]);
+
+  async function handleSave(data, quantidade = 1) {
+    if (data.id) {
+      await persistEquip(equipamentos.map((e) => (e.id === data.id ? data : e)));
+      notify("Equipamento atualizado");
+    } else {
+      const qtd = quantidade > 0 ? quantidade : 1;
+      const novos = Array.from({ length: qtd }, () => ({ ...data, id: uid(), dataCadastro: todayISO() }));
+      await persistEquip([...equipamentos, ...novos]);
+      notify(qtd > 1 ? `${qtd} equipamentos cadastrados` : "Equipamento cadastrado");
+    }
+    setModal(null);
+  }
+
+  async function handleDelete(id) {
+    await persistEquip(equipamentos.filter((e) => e.id !== id));
+    notify("Equipamento removido");
+  }
+
+  async function handleGroupIncrement(grupo) {
+    const novo = {
+      id: uid(),
+      nome: grupo.nome,
+      patrimonio: "",
+      categoria: grupo.categoria,
+      postoAtualId: grupo.postoAtualId,
+      status: grupo.status,
+      valor: grupo.valor,
+      observacoes: grupo.observacoes || "",
+      dataCadastro: todayISO(),
+      dataEntrega: todayISO(),
+    };
+    await persistEquip([...equipamentos, novo]);
+    notify("Unidade adicionada");
+  }
+
+  async function handleGroupDecrement(grupo) {
+    const idRemover = grupo.ids[grupo.ids.length - 1];
+    await persistEquip(equipamentos.filter((e) => e.id !== idRemover));
+    notify(grupo.ids.length <= 1 ? "Grupo removido" : "Unidade removida");
+  }
+
+  async function handleGroupDelete(grupo) {
+    await persistEquip(equipamentos.filter((e) => !grupo.ids.includes(e.id)));
+    notify(`${grupo.ids.length} equipamentos removidos`);
+  }
+
+  async function handleGroupSave(dadosComuns) {
+    await persistEquip(
+      equipamentos.map((e) => (grupoEditando.ids.includes(e.id) ? { ...e, ...dadosComuns } : e))
+    );
+    notify(`${grupoEditando.ids.length} equipamentos atualizados`);
+    setGrupoEditando(null);
+  }
+
+  const tituloSelecionado =
+    postoFiltro === "__todos__" ? "Todos os postos" :
+    postoFiltro === "__sem_posto__" ? "Sem posto / em estoque" :
+    postoFiltro ? postoNome(postoFiltro) : "";
+
+  // ---- Tela 1: selecionar o posto ----
+  if (postoFiltro === null) {
+    return (
+      <div>
+        <SectionHeader
+          title="Equipamentos"
+          subtitle="Escolha um posto para ver os equipamentos cadastrados nele"
+          action={
+            equipamentos.length > 0 ? (
+              <button
+                onClick={async () => {
+                  await exportarTudoParaExcel(equipamentos, postos, postoNome, agruparEquipamentos);
+                  notify("Planilha completa gerada");
+                }}
+                style={{ display: "inline-flex", alignItems: "center", gap: 7, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 14px", fontSize: 13.5, fontWeight: 600, color: "var(--text-secondary)", cursor: "pointer" }}
+              >
+                <Download size={15} strokeWidth={2.2} /> Exportar tudo (Excel)
+              </button>
+            ) : null
+          }
+        />
+
+        <div style={{ position: "relative", maxWidth: 320, marginBottom: 18 }}>
+          <Search size={14} color="var(--text-tertiary)" style={{ position: "absolute", left: 10, top: 10 }} />
+          <input
+            value={buscaPosto}
+            onChange={(e) => setBuscaPosto(e.target.value)}
+            placeholder="Buscar posto…"
+            style={{ ...inputStyle, width: "100%", paddingLeft: 30 }}
+          />
+        </div>
+
+        {postos.length === 0 ? (
+          <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12 }}>
+            <EmptyState icon={MapPin} title="Nenhum posto cadastrado" subtitle="Cadastre um posto na aba “Postos” para poder organizar os equipamentos por lá." />
+          </div>
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 12 }}>
+            <PostoTile
+              label="Todos os postos"
+              count={equipamentos.length}
+              icon={LayoutGrid}
+              onClick={() => setPostoFiltro("__todos__")}
+            />
+            {postosFiltrados.map((p) => (
+              <PostoTile
+                key={p.id}
+                label={p.nome}
+                count={contagemPorPosto[p.id] || 0}
+                icon={MapPin}
+                onClick={() => setPostoFiltro(p.id)}
+              />
+            ))}
+            {semPostoCount > 0 && (
+              <PostoTile
+                label="Sem posto / em estoque"
+                count={semPostoCount}
+                icon={Package}
+                onClick={() => setPostoFiltro("__sem_posto__")}
+              />
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ---- Tela 2: equipamentos do posto selecionado ----
+  const valorTotal = filtered.reduce((sum, e) => sum + (typeof e.valor === "number" ? e.valor : 0), 0);
+
+  return (
+    <div>
+      <button
+        className="no-print"
+        onClick={() => setPostoFiltro(null)}
+        style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "var(--text-secondary)", fontSize: 12.5, cursor: "pointer", marginBottom: 14, padding: 0 }}
+      >
+        <ArrowLeft size={13} /> Trocar posto
+      </button>
+
+      {/* Cabeçalho visível somente na impressão */}
+      <div className="print-header">
+        <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 18 }}>Listagem de equipamentos — {tituloSelecionado}</div>
+        <div style={{ fontSize: 12, color: "#555", marginTop: 4 }}>
+          Emitido em {new Date().toLocaleDateString("pt-BR")} · {filtered.length} equipamento{filtered.length !== 1 ? "s" : ""}
+        </div>
+      </div>
+
+      <div className="no-print">
+        <SectionHeader
+          title={tituloSelecionado}
+          subtitle={`${filtered.length} equipamento${filtered.length !== 1 ? "s" : ""}`}
+          action={
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                onClick={async () => {
+                  await exportarPostoParaExcel(tituloSelecionado, linhasExibidas, postoNome);
+                  notify("Planilha gerada");
+                }}
+                style={{ display: "inline-flex", alignItems: "center", gap: 7, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 14px", fontSize: 13.5, fontWeight: 600, color: "var(--text-secondary)", cursor: "pointer" }}
+              >
+                <Download size={15} strokeWidth={2.2} /> Excel
+              </button>
+              <button
+                onClick={async () => {
+                  const r = await imprimirListagemEquipamentos(tituloSelecionado, linhasExibidas, valorTotal);
+                  if (r === "download") notify("Arquivo baixado — abra e use Ctrl+P para imprimir");
+                  else if (r === "erro") notify("Não foi possível abrir a impressão neste navegador");
+                }}
+                style={{ display: "inline-flex", alignItems: "center", gap: 7, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 14px", fontSize: 13.5, fontWeight: 600, color: "var(--text-secondary)", cursor: "pointer" }}
+              >
+                <Printer size={15} strokeWidth={2.2} /> Imprimir
+              </button>
+              <PrimaryButton icon={Plus} onClick={() => setModal("new")}>Novo equipamento</PrimaryButton>
+            </div>
+          }
+        />
+      </div>
+
+      <div className="filters-row no-print" style={{ display: "flex", gap: 10, marginBottom: 16 }}>
+        <div style={{ position: "relative", flex: 1, maxWidth: 320 }}>
+          <Search size={14} color="var(--text-tertiary)" style={{ position: "absolute", left: 10, top: 10 }} />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Buscar por nome, categoria ou patrimônio…"
+            style={{ ...inputStyle, width: "100%", paddingLeft: 30 }}
+          />
+        </div>
+        <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} style={{ ...inputStyle, width: 170 }}>
+          <option value="todos">Todos os status</option>
+          {Object.entries(STATUS).map(([k, v]) => (
+            <option key={k} value={k}>{v.label}</option>
+          ))}
+        </select>
+      </div>
+
+      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
+        {filtered.length === 0 ? (
+          <EmptyState icon={Boxes} title={equipamentosDoPosto.length === 0 ? "Nenhum equipamento neste posto" : "Nenhum resultado"} subtitle={equipamentosDoPosto.length === 0 ? "Clique em “Novo equipamento” para cadastrar o primeiro." : "Ajuste a busca ou o filtro de status."} />
+        ) : (
+          <div className="table-scroll">
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <thead>
+              <tr style={{ borderBottom: "1px solid var(--border)", background: "var(--hover)" }}>
+                {["Equipamento", "Patrimônio", "Categoria", "Posto atual", "Valor", "Status", ""].map((h) => (
+                  <th key={h} className={h === "" ? "no-print" : ""} style={{ textAlign: "left", padding: "10px 16px", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--text-secondary)", fontWeight: 700 }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {linhasExibidas.map((linha) => {
+                if (linha.tipo === "individual") {
+                  const e = linha.equipamento;
+                  return (
+                    <tr key={e.id} style={{ borderBottom: "1px solid var(--border)" }}>
+                      <td style={{ padding: "11px 16px", fontWeight: 600, color: "var(--text-primary)" }}>{e.nome}</td>
+                      <td style={{ padding: "11px 16px" }}><AssetTag value={e.patrimonio} /></td>
+                      <td style={{ padding: "11px 16px", color: "var(--text-secondary)" }}>{e.categoria || "-"}</td>
+                      <td style={{ padding: "11px 16px", color: "var(--text-secondary)" }}>{postoNome(e.postoAtualId)}</td>
+                      <td style={{ padding: "11px 16px", color: "var(--text-secondary)" }}>{fmtMoeda(e.valor)}</td>
+                      <td style={{ padding: "11px 16px" }}><StatusPill status={e.status} /></td>
+                      <td className="no-print" style={{ padding: "11px 16px", textAlign: "right", whiteSpace: "nowrap" }}>
+                        <IconBtn icon={Pencil} onClick={() => setModal(e)} />
+                        <IconBtn icon={Trash2} onClick={() => handleDelete(e.id)} danger />
+                      </td>
+                    </tr>
+                  );
+                }
+                // linha de grupo: itens idênticos sem patrimônio, exibidos com quantidade
+                const g = linha;
+                return (
+                  <tr key={g.ids.join(",")} style={{ borderBottom: "1px solid var(--border)" }}>
+                    <td style={{ padding: "11px 16px", fontWeight: 600, color: "var(--text-primary)" }}>{g.nome}</td>
+                    <td style={{ padding: "11px 16px" }}>
+                      <span
+                        style={{
+                          display: "inline-flex", alignItems: "center", gap: 6,
+                          fontFamily: "var(--font-mono)", fontSize: 11.5, fontWeight: 700, color: "var(--primary-dark)",
+                          background: "var(--primary-soft)", border: "1px dashed #A9CFCC", borderRadius: 20,
+                          padding: "2px 8px 2px 8px", whiteSpace: "nowrap",
+                        }}
+                      >
+                        <Package size={11} /> qtd {g.quantidade}
+                        <button
+                          className="no-print"
+                          onClick={() => handleGroupDecrement(g)}
+                          title="Remover 1 unidade"
+                          style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 15, height: 15, borderRadius: "50%", border: "none", background: "rgba(15,110,110,0.15)", color: "var(--primary-dark)", cursor: "pointer", padding: 0 }}
+                        >
+                          <Minus size={9} strokeWidth={3} />
+                        </button>
+                        <button
+                          className="no-print"
+                          onClick={() => handleGroupIncrement(g)}
+                          title="Adicionar 1 unidade"
+                          style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 15, height: 15, borderRadius: "50%", border: "none", background: "rgba(15,110,110,0.15)", color: "var(--primary-dark)", cursor: "pointer", padding: 0 }}
+                        >
+                          <Plus size={9} strokeWidth={3} />
+                        </button>
+                      </span>
+                    </td>
+                    <td style={{ padding: "11px 16px", color: "var(--text-secondary)" }}>{g.categoria || "-"}</td>
+                    <td style={{ padding: "11px 16px", color: "var(--text-secondary)" }}>{postoNome(g.postoAtualId)}</td>
+                    <td style={{ padding: "11px 16px", color: "var(--text-secondary)" }}>
+                      {g.valor != null ? `${fmtMoeda(g.valor)} × ${g.quantidade} = ${fmtMoeda(g.valor * g.quantidade)}` : "-"}
+                    </td>
+                    <td style={{ padding: "11px 16px" }}><StatusPill status={g.status} /></td>
+                    <td className="no-print" style={{ padding: "11px 16px", textAlign: "right", whiteSpace: "nowrap" }}>
+                      <IconBtn icon={Pencil} onClick={() => setGrupoEditando(g)} />
+                      <IconBtn icon={Trash2} onClick={() => handleGroupDelete(g)} danger />
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          </div>
+        )}
+        {filtered.length > 0 && valorTotal > 0 && (
+          <div style={{ padding: "10px 16px", borderTop: "1px solid var(--border)", textAlign: "right", fontSize: 12.5, color: "var(--text-secondary)" }}>
+            Valor total: <strong style={{ color: "var(--text-primary)" }}>{fmtMoeda(valorTotal)}</strong>
+          </div>
+        )}
+      </div>
+
+      {modal && (
+        <EquipamentoModal
+          initial={modal === "new" ? null : modal}
+          postos={postos}
+          prefillPostoId={modal === "new" && postoFiltro !== "__todos__" && postoFiltro !== "__sem_posto__" ? postoFiltro : null}
+          onClose={() => setModal(null)}
+          onSave={handleSave}
+        />
+      )}
+
+      {grupoEditando && (
+        <GroupEditModal
+          grupo={grupoEditando}
+          postos={postos}
+          onClose={() => setGrupoEditando(null)}
+          onSave={handleGroupSave}
+        />
+      )}
+    </div>
+  );
+}
+
+function GroupEditModal({ grupo, postos, onClose, onSave }) {
+  const [nome, setNome] = useState(grupo.nome || "");
+  const [categoria, setCategoria] = useState(grupo.categoria || "");
+  const [status, setStatus] = useState(grupo.status || "ativo");
+  const [valor, setValor] = useState(grupo.valor != null ? String(grupo.valor) : "");
+  const [postoAtualId, setPostoAtualId] = useState(grupo.postoAtualId || "");
+  const [dataEntrega, setDataEntrega] = useState(grupo.dataEntrega || "");
+  const [error, setError] = useState("");
+
+  function submit() {
+    if (!nome.trim()) {
+      setError("Informe o nome do equipamento.");
+      return;
+    }
+    const valorNum = valor.trim() === "" ? null : Number(valor.replace(",", "."));
+    if (valor.trim() !== "" && (isNaN(valorNum) || valorNum < 0)) {
+      setError("Informe um valor válido (ou deixe em branco).");
+      return;
+    }
+    onSave({
+      nome: nome.trim(),
+      categoria: categoria.trim(),
+      status,
+      valor: valorNum,
+      postoAtualId: postoAtualId || null,
+      dataEntrega: dataEntrega || null,
+    });
+  }
+
+  return (
+    <Modal title={`Editar grupo — ${grupo.quantidade} unidades`} onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{ fontSize: 12.5, color: "var(--text-secondary)", background: "var(--hover)", borderRadius: 8, padding: "8px 12px" }}>
+          As alterações serão aplicadas às {grupo.quantidade} unidades deste grupo (nenhuma delas tem número de patrimônio).
+        </div>
+
+        <Field label="Nome do equipamento *">
+          <input style={inputStyle} value={nome} onChange={(e) => setNome(e.target.value)} autoFocus />
+        </Field>
+
+        <div className="grid-2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <Field label="Categoria">
+            <input style={inputStyle} value={categoria} onChange={(e) => setCategoria(e.target.value)} placeholder="Ex.: Limpeza" />
+          </Field>
+          <Field label="Status">
+            <select style={inputStyle} value={status} onChange={(e) => setStatus(e.target.value)}>
+              {Object.entries(STATUS).map(([k, v]) => (
+                <option key={k} value={k}>{v.label}</option>
+              ))}
+            </select>
+          </Field>
+        </div>
+
+        <div className="grid-2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <Field label="Posto atual">
+            <select style={inputStyle} value={postoAtualId || ""} onChange={(e) => setPostoAtualId(e.target.value)}>
+              <option value="">Sem posto / em estoque</option>
+              {postos.map((p) => (
+                <option key={p.id} value={p.id}>{p.nome}</option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Valor unitário (opcional)">
+            <input style={inputStyle} value={valor} onChange={(e) => setValor(e.target.value)} placeholder="Ex.: 89,90" inputMode="decimal" />
+          </Field>
+        </div>
+
+        <Field label="Data de entrega no posto (opcional)">
+          <input style={inputStyle} type="date" value={dataEntrega} onChange={(e) => setDataEntrega(e.target.value)} />
+        </Field>
+
+        {error && <div style={{ color: "var(--danger)", fontSize: 12.5 }}>{error}</div>}
+
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 6 }}>
+          <button onClick={onClose} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 14px", fontSize: 13, cursor: "pointer", color: "var(--text-secondary)" }}>Cancelar</button>
+          <PrimaryButton onClick={submit}>Salvar alterações</PrimaryButton>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function PostoTile({ label, count, icon: Icon, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        textAlign: "left", background: "var(--surface)", border: "1px solid var(--border)",
+        borderRadius: 12, padding: 16, cursor: "pointer", transition: "border-color 0.15s, background 0.15s",
+      }}
+      onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.background = "var(--hover)"; }}
+      onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.background = "var(--surface)"; }}
+    >
+      <div style={{ width: 30, height: 30, borderRadius: 8, background: "var(--primary-soft)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 10 }}>
+        <Icon size={14} color="var(--primary)" />
+      </div>
+      <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 13.5, color: "var(--text-primary)" }}>{label}</div>
+      <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 3 }}>
+        {count} equipamento{count !== 1 ? "s" : ""}
+      </div>
+    </button>
+  );
+}
+
+function IconBtn({ icon: Icon, onClick, danger }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        background: "none", border: "none", cursor: "pointer", padding: 6, borderRadius: 6,
+        color: danger ? "var(--danger)" : "var(--text-secondary)", marginLeft: 2,
+      }}
+      onMouseEnter={(e) => (e.currentTarget.style.background = danger ? "var(--danger-bg)" : "var(--hover)")}
+      onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
+    >
+      <Icon size={14} />
+    </button>
+  );
+}
+
+function EquipamentoModal({ initial, postos, onClose, onSave, prefillPostoId }) {
+  const [nome, setNome] = useState(initial?.nome || "");
+  const [patrimonio, setPatrimonio] = useState(initial?.patrimonio || "");
+  const [categoria, setCategoria] = useState(initial?.categoria || "");
+  const [postoAtualId, setPostoAtualId] = useState(initial?.postoAtualId || prefillPostoId || "");
+  const [status, setStatus] = useState(initial?.status || "ativo");
+  const [valor, setValor] = useState(initial?.valor != null ? String(initial.valor) : "");
+  const [quantidade, setQuantidade] = useState("1");
+  const [dataEntrega, setDataEntrega] = useState(initial?.dataEntrega || todayISO());
+  const [observacoes, setObservacoes] = useState(initial?.observacoes || "");
+  const [error, setError] = useState("");
+
+  const isNovo = !initial;
+  const temPatrimonio = patrimonio.trim() !== "";
+  const permiteQuantidade = isNovo && !temPatrimonio;
+
+  function submit() {
+    if (!nome.trim()) {
+      setError("Informe o nome do equipamento.");
+      return;
+    }
+    const valorNum = valor.trim() === "" ? null : Number(valor.replace(",", "."));
+    if (valor.trim() !== "" && (isNaN(valorNum) || valorNum < 0)) {
+      setError("Informe um valor válido (ou deixe em branco).");
+      return;
+    }
+
+    let qtd = 1;
+    if (permiteQuantidade) {
+      qtd = parseInt(quantidade, 10);
+      if (isNaN(qtd) || qtd < 1) {
+        setError("Informe uma quantidade válida (mínimo 1).");
+        return;
+      }
+    }
+
+    onSave(
+      {
+        ...(initial || {}),
+        nome: nome.trim(),
+        patrimonio: patrimonio.trim(), // opcional
+        categoria: categoria.trim(),
+        postoAtualId: postoAtualId || null,
+        status,
+        valor: valorNum, // opcional
+        dataEntrega: dataEntrega || null, // opcional — data em que foi entregue no posto
+        observacoes: observacoes.trim(),
+      },
+      qtd
+    );
+  }
+
+  return (
+    <Modal title={initial ? "Editar equipamento" : "Novo equipamento"} onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <Field label="Nome do equipamento *">
+          <input style={inputStyle} value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex.: Enceradeira industrial" autoFocus />
+        </Field>
+
+        <div className="grid-2" style={{ display: "grid", gridTemplateColumns: temPatrimonio || !isNovo ? "1fr" : "1fr 130px", gap: 12 }}>
+          <Field label="Número de patrimônio (opcional)">
+            <input style={{ ...inputStyle, fontFamily: "var(--font-mono)" }} value={patrimonio} onChange={(e) => setPatrimonio(e.target.value)} placeholder="Ex.: 00234 — deixe em branco se não houver" />
+          </Field>
+          {isNovo && !temPatrimonio && (
+            <Field label="Quantidade">
+              <input
+                style={inputStyle}
+                type="number"
+                min={1}
+                value={quantidade}
+                onChange={(e) => setQuantidade(e.target.value)}
+                placeholder="1"
+              />
+            </Field>
+          )}
+        </div>
+        {isNovo && !temPatrimonio && Number(quantidade) > 1 && (
+          <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: -6 }}>
+            Serão cadastrados {quantidade} equipamentos idênticos, sem número de patrimônio.
+          </div>
+        )}
+        {isNovo && temPatrimonio && (
+          <div style={{ fontSize: 11.5, color: "var(--text-tertiary)", marginTop: -6 }}>
+            Com número de patrimônio, a quantidade é sempre 1 (patrimônio identifica um item único).
+          </div>
+        )}
+
+        <div className="grid-2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <Field label="Categoria">
+            <input style={inputStyle} value={categoria} onChange={(e) => setCategoria(e.target.value)} placeholder="Ex.: Limpeza" />
+          </Field>
+          <Field label="Status">
+            <select style={inputStyle} value={status} onChange={(e) => setStatus(e.target.value)}>
+              {Object.entries(STATUS).map(([k, v]) => (
+                <option key={k} value={k}>{v.label}</option>
+              ))}
+            </select>
+          </Field>
+        </div>
+
+        <div className="grid-2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <Field label="Posto atual">
+            <select style={inputStyle} value={postoAtualId || ""} onChange={(e) => setPostoAtualId(e.target.value)}>
+              <option value="">Sem posto / em estoque</option>
+              {postos.map((p) => (
+                <option key={p.id} value={p.id}>{p.nome}</option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Valor de compra (opcional)">
+            <input
+              style={inputStyle}
+              value={valor}
+              onChange={(e) => setValor(e.target.value)}
+              placeholder="Ex.: 1250,00"
+              inputMode="decimal"
+            />
+          </Field>
+        </div>
+
+        <Field label="Data de entrega no posto (opcional)">
+          <input style={inputStyle} type="date" value={dataEntrega} onChange={(e) => setDataEntrega(e.target.value)} />
+        </Field>
+
+        <Field label="Observações">
+          <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical" }} value={observacoes} onChange={(e) => setObservacoes(e.target.value)} placeholder="Notas adicionais (opcional)" />
+        </Field>
+
+        {error && <div style={{ color: "var(--danger)", fontSize: 12.5 }}>{error}</div>}
+
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 6 }}>
+          <button onClick={onClose} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 14px", fontSize: 13, cursor: "pointer", color: "var(--text-secondary)" }}>Cancelar</button>
+          <PrimaryButton onClick={submit}>{initial ? "Salvar alterações" : "Cadastrar"}</PrimaryButton>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// ---------- Postos ----------
+function PostosView({ postos, equipamentos, persistPostos, notify }) {
+  const [modal, setModal] = useState(null);
+
+  function countFor(id) {
+    return equipamentos.filter((e) => e.postoAtualId === id).length;
+  }
+
+  async function handleSave(data) {
+    if (data.id) {
+      await persistPostos(postos.map((p) => (p.id === data.id ? data : p)));
+      notify("Posto atualizado");
+    } else {
+      await persistPostos([...postos, { ...data, id: uid() }]);
+      notify("Posto cadastrado");
+    }
+    setModal(null);
+  }
+
+  async function handleDelete(id) {
+    if (countFor(id) > 0) {
+      notify("Remova ou movimente os equipamentos deste posto antes de excluí-lo");
+      return;
+    }
+    await persistPostos(postos.filter((p) => p.id !== id));
+    notify("Posto removido");
+  }
+
+  return (
+    <div>
+      <SectionHeader
+        title="Postos"
+        subtitle="Locais / clientes onde os equipamentos ficam alocados"
+        action={<PrimaryButton icon={Plus} onClick={() => setModal("new")}>Novo posto</PrimaryButton>}
+      />
+
+      {postos.length === 0 ? (
+        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12 }}>
+          <EmptyState icon={MapPin} title="Nenhum posto cadastrado" subtitle="Cadastre os postos ou clientes onde os equipamentos são utilizados." />
+        </div>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 14 }}>
+          {postos.map((p) => (
+            <div key={p.id} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 16 }}>
+              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
+                <div style={{ width: 34, height: 34, borderRadius: 9, background: "var(--accent-soft)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <MapPin size={16} color="var(--accent)" />
+                </div>
+                <div>
+                  <IconBtn icon={Pencil} onClick={() => setModal(p)} />
+                  <IconBtn icon={Trash2} onClick={() => handleDelete(p.id)} danger />
+                </div>
+              </div>
+              <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 15, marginTop: 10, color: "var(--text-primary)" }}>{p.nome}</div>
+              {p.endereco && <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 3 }}>{p.endereco}</div>}
+              {p.responsavel && <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 2 }}>Responsável: {p.responsavel}</div>}
+              <div style={{ marginTop: 12, fontSize: 12, color: "var(--primary-dark)", fontWeight: 600, display: "flex", alignItems: "center", gap: 5 }}>
+                <Package size={13} /> {countFor(p.id)} equipamento{countFor(p.id) !== 1 ? "s" : ""} alocado{countFor(p.id) !== 1 ? "s" : ""}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {modal && <PostoModal initial={modal === "new" ? null : modal} onClose={() => setModal(null)} onSave={handleSave} />}
+    </div>
+  );
+}
+
+function PostoModal({ initial, onClose, onSave }) {
+  const [nome, setNome] = useState(initial?.nome || "");
+  const [endereco, setEndereco] = useState(initial?.endereco || "");
+  const [responsavel, setResponsavel] = useState(initial?.responsavel || "");
+  const [error, setError] = useState("");
+
+  function submit() {
+    if (!nome.trim()) {
+      setError("Informe o nome do posto.");
+      return;
+    }
+    onSave({ ...(initial || {}), nome: nome.trim(), endereco: endereco.trim(), responsavel: responsavel.trim() });
+  }
+
+  return (
+    <Modal title={initial ? "Editar posto" : "Novo posto"} onClose={onClose} width={400}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <Field label="Nome do posto / cliente *">
+          <input style={inputStyle} value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex.: Hospital Central - Setor A" autoFocus />
+        </Field>
+        <Field label="Endereço">
+          <input style={inputStyle} value={endereco} onChange={(e) => setEndereco(e.target.value)} placeholder="Opcional" />
+        </Field>
+        <Field label="Responsável no local">
+          <input style={inputStyle} value={responsavel} onChange={(e) => setResponsavel(e.target.value)} placeholder="Opcional" />
+        </Field>
+        {error && <div style={{ color: "var(--danger)", fontSize: 12.5 }}>{error}</div>}
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 6 }}>
+          <button onClick={onClose} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 14px", fontSize: 13, cursor: "pointer", color: "var(--text-secondary)" }}>Cancelar</button>
+          <PrimaryButton onClick={submit}>{initial ? "Salvar alterações" : "Cadastrar"}</PrimaryButton>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// ---------- Movimentar ----------
+function MovimentarView({ equipamentos, postos, persistEquip, movimentacoes, persistMov, postoNome, notify }) {
+  const [postoOrigemId, setPostoOrigemId] = useState(""); // "" = nenhum | posto.id | "__sem_posto__"
+  const [selecaoKey, setSelecaoKey] = useState(""); // chave da linha selecionada (individual ou grupo)
+  const [quantidadeMover, setQuantidadeMover] = useState("1");
+  const [postoDestinoId, setPostoDestinoId] = useState("");
+  const [responsavel, setResponsavel] = useState("");
+  const [observacao, setObservacao] = useState("");
+  const [error, setError] = useState("");
+
+  const disponiveisParaMover = equipamentos.filter((e) => e.status !== "baixa");
+
+  // opções de posto de origem, só as que têm ao menos 1 equipamento disponível
+  const origensDisponiveis = useMemo(() => {
+    const comEquip = new Set(disponiveisParaMover.map((e) => e.postoAtualId || "__sem_posto__"));
+    const lista = postos.filter((p) => comEquip.has(p.id)).map((p) => ({ id: p.id, nome: p.nome }));
+    if (comEquip.has("__sem_posto__")) lista.push({ id: "__sem_posto__", nome: "Sem posto / em estoque" });
+    return lista;
+  }, [postos, disponiveisParaMover]);
+
+  // equipamentos do posto de origem escolhido, agrupando itens idênticos sem patrimônio
+  const linhasOrigem = useMemo(() => {
+    if (!postoOrigemId) return [];
+    const doPosto = disponiveisParaMover.filter((e) =>
+      postoOrigemId === "__sem_posto__" ? !e.postoAtualId : e.postoAtualId === postoOrigemId
+    );
+    return agruparEquipamentos(doPosto);
+  }, [disponiveisParaMover, postoOrigemId]);
+
+  function keyDaLinha(linha) {
+    return linha.tipo === "individual" ? `ind:${linha.equipamento.id}` : `grp:${linha.ids.join(",")}`;
+  }
+
+  const selecionado = linhasOrigem.find((l) => keyDaLinha(l) === selecaoKey) || null;
+  const isGrupo = selecionado?.tipo === "grupo";
+  const nomeSelecionado = selecionado ? (isGrupo ? selecionado.nome : selecionado.equipamento.nome) : "";
+  const patrimonioSelecionado = selecionado && !isGrupo ? selecionado.equipamento.patrimonio : "";
+  const qtdMaxima = isGrupo ? selecionado.quantidade : 1;
+
+  function handleTrocarOrigem(valor) {
+    setPostoOrigemId(valor);
+    setSelecaoKey("");
+    setQuantidadeMover("1");
+    setError("");
+  }
+
+  function handleSelecionar(valor) {
+    setSelecaoKey(valor);
+    setQuantidadeMover("1");
+    setError("");
+  }
+
+  async function confirmar() {
+    setError("");
+    if (!postoOrigemId) return setError("Selecione o posto de origem.");
+    if (!selecionado) return setError("Selecione o equipamento.");
+    if (!postoDestinoId) return setError("Selecione o posto de destino.");
+
+    const origemId = postoOrigemId === "__sem_posto__" ? null : postoOrigemId;
+    if (origemId === postoDestinoId) return setError("O equipamento já está nesse posto.");
+
+    let qtd = 1;
+    let idsMover = [];
+    if (isGrupo) {
+      qtd = parseInt(quantidadeMover, 10);
+      if (isNaN(qtd) || qtd < 1 || qtd > selecionado.quantidade) {
+        setError(`Informe uma quantidade entre 1 e ${selecionado.quantidade}.`);
+        return;
+      }
+      idsMover = selecionado.ids.slice(0, qtd);
+    } else {
+      idsMover = [selecionado.equipamento.id];
+    }
+
+    const registro = {
+      id: uid(),
+      equipamentoId: idsMover[0],
+      equipamentoNome: nomeSelecionado,
+      patrimonio: patrimonioSelecionado || "",
+      quantidade: qtd,
+      postoOrigemId: origemId,
+      postoOrigemNome: origemId ? postoNome(origemId) : "Estoque / sem posto",
+      postoDestinoId,
+      postoDestinoNome: postoNome(postoDestinoId),
+      data: todayISO(),
+      responsavel: responsavel.trim(),
+      observacao: observacao.trim(),
+    };
+
+    await persistMov([...movimentacoes, registro]);
+    await persistEquip(equipamentos.map((e) => (idsMover.includes(e.id) ? { ...e, postoAtualId: postoDestinoId } : e)));
+
+    notify(qtd > 1 ? `${qtd} unidades movimentadas` : "Movimentação registrada");
+    setPostoOrigemId("");
+    setSelecaoKey("");
+    setQuantidadeMover("1");
+    setPostoDestinoId("");
+    setResponsavel("");
+    setObservacao("");
+  }
+
+  return (
+    <div>
+      <SectionHeader title="Movimentar equipamento" subtitle="Escolha o posto de origem para ver os equipamentos disponíveis nele" />
+
+      {postos.length === 0 || equipamentos.length === 0 ? (
+        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12 }}>
+          <EmptyState
+            icon={ArrowLeftRight}
+            title="Cadastre equipamentos e postos primeiro"
+            subtitle="Você precisa de ao menos um equipamento e um posto cadastrados para registrar uma movimentação."
+          />
+        </div>
+      ) : (
+        <div className="grid-2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+          <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 22 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <Field label="Posto de origem *">
+                <select style={inputStyle} value={postoOrigemId} onChange={(e) => handleTrocarOrigem(e.target.value)}>
+                  <option value="">Selecione o posto de onde vai sair…</option>
+                  {origensDisponiveis.map((p) => (
+                    <option key={p.id} value={p.id}>{p.nome}</option>
+                  ))}
+                </select>
+              </Field>
+
+              <Field label="Equipamento *">
+                <select
+                  style={inputStyle}
+                  value={selecaoKey}
+                  onChange={(e) => handleSelecionar(e.target.value)}
+                  disabled={!postoOrigemId}
+                >
+                  <option value="">{postoOrigemId ? "Selecione…" : "Escolha primeiro o posto de origem"}</option>
+                  {linhasOrigem.map((l) => {
+                    const key = keyDaLinha(l);
+                    if (l.tipo === "individual") {
+                      const e = l.equipamento;
+                      return (
+                        <option key={key} value={key}>
+                          {e.nome}{e.patrimonio ? ` — Nº ${e.patrimonio}` : ""}
+                        </option>
+                      );
+                    }
+                    return (
+                      <option key={key} value={key}>
+                        {l.nome} — qtd {l.quantidade} (sem patrimônio)
+                      </option>
+                    );
+                  })}
+                </select>
+              </Field>
+
+              {isGrupo && (
+                <Field label={`Quantidade a movimentar (máx. ${qtdMaxima})`}>
+                  <input
+                    style={inputStyle}
+                    type="number"
+                    min={1}
+                    max={qtdMaxima}
+                    value={quantidadeMover}
+                    onChange={(e) => setQuantidadeMover(e.target.value)}
+                  />
+                </Field>
+              )}
+
+              <div className="swap-grid" style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", gap: 10, alignItems: "center" }}>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 5 }}>Posto de origem</div>
+                  <div style={{ ...inputStyle, background: "var(--hover)", color: "var(--text-secondary)" }}>
+                    {postoOrigemId ? (postoOrigemId === "__sem_posto__" ? "Sem posto / em estoque" : postoNome(postoOrigemId)) : "-"}
+                  </div>
+                </div>
+                <ArrowLeftRight size={16} color="var(--text-tertiary)" style={{ marginTop: 18 }} />
+                <Field label="Novo posto *">
+                  <select style={inputStyle} value={postoDestinoId} onChange={(e) => setPostoDestinoId(e.target.value)}>
+                    <option value="">Selecione…</option>
+                    {postos.map((p) => (
+                      <option key={p.id} value={p.id}>{p.nome}</option>
+                    ))}
+                  </select>
+                </Field>
+              </div>
+
+              <Field label="Responsável pela movimentação">
+                <input style={inputStyle} value={responsavel} onChange={(e) => setResponsavel(e.target.value)} placeholder="Opcional" />
+              </Field>
+
+              <Field label="Observação">
+                <textarea style={{ ...inputStyle, minHeight: 56, resize: "vertical" }} value={observacao} onChange={(e) => setObservacao(e.target.value)} placeholder="Opcional" />
+              </Field>
+
+              {error && <div style={{ color: "var(--danger)", fontSize: 12.5 }}>{error}</div>}
+
+              <PrimaryButton icon={ArrowLeftRight} onClick={confirmar}>Confirmar movimentação</PrimaryButton>
+            </div>
+          </div>
+
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 10 }}>
+              Pré-visualização
+            </div>
+            {selecionado ? (
+              <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 18 }}>
+                <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 16, color: "var(--text-primary)" }}>{nomeSelecionado}</div>
+                <div style={{ marginTop: 6 }}>
+                  {isGrupo ? (
+                    <span style={{ fontFamily: "var(--font-mono)", fontSize: 11.5, fontWeight: 700, color: "var(--primary-dark)", background: "var(--primary-soft)", border: "1px dashed #A9CFCC", borderRadius: 20, padding: "2px 8px" }}>
+                      movendo {quantidadeMover || 0} de {qtdMaxima}
+                    </span>
+                  ) : (
+                    <AssetTag value={patrimonioSelecionado} />
+                  )}
+                </div>
+                <div style={{ marginTop: 14, display: "flex", alignItems: "center", gap: 10, fontSize: 13 }}>
+                  <span style={{ padding: "5px 10px", borderRadius: 7, background: "var(--hover)", color: "var(--text-secondary)" }}>
+                    {postoOrigemId === "__sem_posto__" ? "Sem posto" : postoNome(postoOrigemId)}
+                  </span>
+                  <ChevronRight size={14} color="var(--text-tertiary)" />
+                  <span style={{ padding: "5px 10px", borderRadius: 7, background: postoDestinoId ? "var(--primary-soft)" : "var(--hover)", color: postoDestinoId ? "var(--primary-dark)" : "var(--text-tertiary)", fontWeight: postoDestinoId ? 600 : 400 }}>
+                    {postoDestinoId ? postoNome(postoDestinoId) : "destino…"}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div style={{ background: "var(--surface)", border: "1px dashed var(--border)", borderRadius: 12 }}>
+                <EmptyState icon={Boxes} title={postoOrigemId ? "Selecione um equipamento" : "Selecione o posto de origem"} subtitle="A pré-visualização da movimentação aparece aqui." />
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------- Histórico ----------
+function HistoricoView({ movimentacoes, equipamentos, postoNome }) {
+  const [query, setQuery] = useState("");
+
+  const ordenadas = [...movimentacoes].sort((a, b) => (a.data < b.data ? 1 : -1));
+  const filtered = ordenadas.filter((m) => {
+    const eq = equipamentos.find((e) => e.id === m.equipamentoId);
+    const nome = m.equipamentoNome || eq?.nome || "";
+    const patrimonio = m.patrimonio || eq?.patrimonio || "";
+    const text = `${nome} ${patrimonio} ${m.postoOrigemNome} ${m.postoDestinoNome} ${m.responsavel || ""}`.toLowerCase();
+    return text.includes(query.toLowerCase());
+  });
+
+  return (
+    <div>
+      <SectionHeader title="Histórico de movimentações" subtitle="Todas as transferências de equipamentos entre postos" />
+
+      <div style={{ position: "relative", maxWidth: 340, marginBottom: 16 }}>
+        <Search size={14} color="var(--text-tertiary)" style={{ position: "absolute", left: 10, top: 10 }} />
+        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar por equipamento, posto ou responsável…" style={{ ...inputStyle, width: "100%", paddingLeft: 30 }} />
+      </div>
+
+      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
+        {filtered.length === 0 ? (
+          <EmptyState icon={History} title="Nenhuma movimentação registrada" subtitle="Movimente um equipamento na aba “Movimentar” para ver o histórico aqui." />
+        ) : (
+          <div className="table-scroll">
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <thead>
+              <tr style={{ borderBottom: "1px solid var(--border)", background: "var(--hover)" }}>
+                {["Data", "Equipamento", "Qtd", "Patrimônio", "De", "Para", "Responsável"].map((h) => (
+                  <th key={h} style={{ textAlign: "left", padding: "10px 16px", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--text-secondary)", fontWeight: 700 }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((m) => {
+                const eq = equipamentos.find((e) => e.id === m.equipamentoId);
+                const nomeExibir = m.equipamentoNome || eq?.nome || "Equipamento removido";
+                const patrimonioExibir = m.patrimonio || eq?.patrimonio || "";
+                return (
+                  <tr key={m.id} style={{ borderBottom: "1px solid var(--border)" }}>
+                    <td style={{ padding: "11px 16px", color: "var(--text-secondary)", whiteSpace: "nowrap" }}>{fmtDate(m.data)}</td>
+                    <td style={{ padding: "11px 16px", fontWeight: 600, color: "var(--text-primary)" }}>{nomeExibir}</td>
+                    <td style={{ padding: "11px 16px", color: "var(--text-secondary)" }}>{m.quantidade || 1}</td>
+                    <td style={{ padding: "11px 16px" }}><AssetTag value={patrimonioExibir} /></td>
+                    <td style={{ padding: "11px 16px", color: "var(--text-secondary)" }}>{m.postoOrigemNome}</td>
+                    <td style={{ padding: "11px 16px", color: "var(--text-primary)", fontWeight: 600 }}>{m.postoDestinoNome}</td>
+                    <td style={{ padding: "11px 16px", color: "var(--text-secondary)" }}>{m.responsavel || "-"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function EntregasView({ equipamentos, postoNome }) {
+  const [query, setQuery] = useState("");
+
+  const linhas = useMemo(() => {
+    const agrupadas = agruparEquipamentos(equipamentos);
+    const comData = agrupadas.map((l) => {
+      const base = l.tipo === "individual" ? l.equipamento : l;
+      return { ...l, _dataCadastro: base.dataCadastro || "", _dataEntrega: base.dataEntrega || "" };
+    });
+    comData.sort((a, b) => {
+      const da = a._dataEntrega || a._dataCadastro || "";
+      const db = b._dataEntrega || b._dataCadastro || "";
+      return da < db ? 1 : da > db ? -1 : 0;
+    });
+    return comData;
+  }, [equipamentos]);
+
+  const filtered = linhas.filter((l) => {
+    const nome = l.tipo === "individual" ? l.equipamento.nome : l.nome;
+    const patrimonio = l.tipo === "individual" ? l.equipamento.patrimonio || "" : "";
+    const posto = postoNome(l.tipo === "individual" ? l.equipamento.postoAtualId : l.postoAtualId);
+    const text = `${nome} ${patrimonio} ${posto}`.toLowerCase();
+    return text.includes(query.toLowerCase());
+  });
+
+  return (
+    <div>
+      <SectionHeader title="Entregas" subtitle="Data de cadastro e de entrega de cada equipamento no posto" />
+
+      <div style={{ position: "relative", maxWidth: 340, marginBottom: 16 }}>
+        <Search size={14} color="var(--text-tertiary)" style={{ position: "absolute", left: 10, top: 10 }} />
+        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar por equipamento ou posto…" style={{ ...inputStyle, width: "100%", paddingLeft: 30 }} />
+      </div>
+
+      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
+        {filtered.length === 0 ? (
+          <EmptyState icon={Truck} title="Nenhum equipamento cadastrado" subtitle="Ao cadastrar um equipamento num posto, ele aparece aqui com a data de entrega." />
+        ) : (
+          <div className="table-scroll">
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <thead>
+              <tr style={{ borderBottom: "1px solid var(--border)", background: "var(--hover)" }}>
+                {["Equipamento", "Patrimônio / Qtd", "Posto", "Cadastrado em", "Entregue em"].map((h) => (
+                  <th key={h} style={{ textAlign: "left", padding: "10px 16px", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--text-secondary)", fontWeight: 700 }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((l) => {
+                const isIndividual = l.tipo === "individual";
+                const nome = isIndividual ? l.equipamento.nome : l.nome;
+                const posto = postoNome(isIndividual ? l.equipamento.postoAtualId : l.postoAtualId);
+                const key = isIndividual ? l.equipamento.id : l.ids.join(",");
+                return (
+                  <tr key={key} style={{ borderBottom: "1px solid var(--border)" }}>
+                    <td style={{ padding: "11px 16px", fontWeight: 600, color: "var(--text-primary)" }}>{nome}</td>
+                    <td style={{ padding: "11px 16px" }}>
+                      {isIndividual ? (
+                        <AssetTag value={l.equipamento.patrimonio} />
+                      ) : (
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "var(--font-mono)", fontSize: 11.5, fontWeight: 700, color: "var(--primary-dark)", background: "var(--primary-soft)", border: "1px dashed #A9CFCC", borderRadius: 20, padding: "2px 8px" }}>
+                          <Package size={11} /> qtd {l.quantidade}
+                        </span>
+                      )}
+                    </td>
+                    <td style={{ padding: "11px 16px", color: "var(--text-secondary)" }}>{posto}</td>
+                    <td style={{ padding: "11px 16px", color: "var(--text-secondary)", whiteSpace: "nowrap" }}>{fmtDate(l._dataCadastro)}</td>
+                    <td style={{ padding: "11px 16px", color: "var(--text-primary)", fontWeight: 600, whiteSpace: "nowrap" }}>{fmtDate(l._dataEntrega)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------- Importar planilha ----------
+function normalize(str) {
+  return (str || "").toString().trim().toLowerCase();
+}
+
+// remove acentos e baixa a caixa, para comparar cabeçalhos com segurança
+function normalizeHeader(str) {
+  return (str || "")
+    .toString()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+// Procura, dentro das primeiras linhas de uma aba, a linha de cabeçalho que
+// contém "EQUIPAMENTO" + "Nº PATRIMÔNIO"/"QUANTIDADE" (em qualquer ordem/coluna).
+function detectHeader(aoa) {
+  const maxScan = Math.min(aoa.length, 25);
+  for (let r = 0; r < maxScan; r++) {
+    const row = aoa[r] || [];
+    let equipCol = -1, patrimCol = -1, qtdCol = -1, postoCol = -1;
+    row.forEach((cell, c) => {
+      const n = normalizeHeader(cell);
+      if (n === "equipamento") equipCol = c;
+      else if (n.includes("patrim")) patrimCol = c;
+      else if (n.includes("quantidade") || n === "qtd" || n === "qtde") qtdCol = c;
+      else if (n === "posto") postoCol = c;
+    });
+    if (equipCol !== -1 && (patrimCol !== -1 || qtdCol !== -1)) {
+      return { headerRow: r, equipCol, patrimCol, qtdCol, postoCol };
+    }
+    // fallback: algumas abas rotulam a 1ª coluna como "LÍDER"/"ENCARREGADO" em vez de
+    // "EQUIPAMENTO" — se PATRIMÔNIO e QUANTIDADE aparecem juntos, assume-se a coluna A.
+    if (equipCol === -1 && patrimCol !== -1 && qtdCol !== -1) {
+      return { headerRow: r, equipCol: 0, patrimCol, qtdCol, postoCol };
+    }
+  }
+  return null;
+}
+
+// Extrai as linhas de equipamento de uma aba já com cabeçalho identificado.
+// Expande a QUANTIDADE em itens individuais quando não há patrimônio.
+function extractRowsFromSheet(aoa, header, sheetName) {
+  const itens = [];
+  for (let r = header.headerRow + 1; r < aoa.length; r++) {
+    const row = aoa[r] || [];
+    const equipNome = String(row[header.equipCol] ?? "").trim();
+    if (!equipNome) continue;
+
+    const patrimonio = header.patrimCol !== -1 ? String(row[header.patrimCol] ?? "").trim() : "";
+    const postoNome = header.postoCol !== -1 ? String(row[header.postoCol] ?? "").trim() || sheetName : sheetName;
+
+    let qtdRaw = header.qtdCol !== -1 ? row[header.qtdCol] : null;
+    let qtd = parseInt(String(qtdRaw ?? "").replace(",", "."), 10);
+    if (isNaN(qtd)) qtd = patrimonio ? 1 : 1;
+
+    // observação: qualquer outra célula preenchida na linha que não seja uma das colunas conhecidas
+    let observacao = "";
+    row.forEach((cell, c) => {
+      if (observacao) return;
+      if ([header.equipCol, header.patrimCol, header.qtdCol, header.postoCol].includes(c)) return;
+      const v = String(cell ?? "").trim();
+      if (v && v !== "0") observacao = v;
+    });
+
+    if (patrimonio) {
+      // patrimônio identifica um item único, independente da quantidade da linha
+      itens.push({ posto: postoNome, equipamento: equipNome, patrimonio, observacao });
+    } else {
+      const total = qtd > 0 ? qtd : 1;
+      for (let i = 0; i < total; i++) {
+        itens.push({ posto: postoNome, equipamento: equipNome, patrimonio: "", observacao });
+      }
+    }
+  }
+  return itens;
+}
+
+function ImportarView({ equipamentos, postos, persistEquip, persistPostos, notify }) {
+  const [modo, setModo] = useState(null); // null | 'abas' | 'manual'
+  const [step, setStep] = useState("upload"); // upload | preview/mapear | resultado
+  const [fileName, setFileName] = useState("");
+  const [error, setError] = useState("");
+  const [dragOver, setDragOver] = useState(false);
+  const [resultado, setResultado] = useState(null);
+  const inputRef = useRef(null);
+
+  // --- modo "abas" (uma aba por posto, formato Sant'Costa) ---
+  const [itensDetectados, setItensDetectados] = useState([]); // [{posto, equipamento, patrimonio, observacao}]
+  const [abasIgnoradas, setAbasIgnoradas] = useState([]);
+
+  // --- modo "manual" (planilha única, mapeamento de colunas) ---
+  const [headers, setHeaders] = useState([]);
+  const [rows, setRows] = useState([]);
+  const [mapping, setMapping] = useState({ posto: "", equipamento: "", patrimonio: "", categoria: "" });
+
+  function resetAll() {
+    setModo(null);
+    setStep("upload");
+    setFileName("");
+    setError("");
+    setResultado(null);
+    setItensDetectados([]);
+    setAbasIgnoradas([]);
+    setHeaders([]);
+    setRows([]);
+    setMapping({ posto: "", equipamento: "", patrimonio: "", categoria: "" });
+  }
+
+  function guessColumn(headerList, candidates) {
+    const idx = headerList.findIndex((h) => candidates.some((c) => normalize(h).includes(c)));
+    return idx >= 0 ? String(idx) : "";
+  }
+
+  async function handleFileAbas(file) {
+    setError("");
+    if (!file) return;
+    try {
+      const buffer = await file.arrayBuffer();
+      const wb = XLSX.read(buffer, { type: "array" });
+
+      const itens = [];
+      const ignoradas = [];
+
+      wb.SheetNames.forEach((sheetName) => {
+        const sheet = wb.Sheets[sheetName];
+        const aoa = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "", raw: false });
+        const header = detectHeader(aoa);
+        if (!header) {
+          ignoradas.push(sheetName);
+          return;
+        }
+        const extraidos = extractRowsFromSheet(aoa, header, sheetName.trim());
+        itens.push(...extraidos);
+      });
+
+      if (itens.length === 0) {
+        setError("Não encontrei linhas de equipamento reconhecíveis em nenhuma aba (procurei por colunas “EQUIPAMENTO”, “Nº PATRIMÔNIO” e “QUANTIDADE”).");
+        return;
+      }
+
+      setItensDetectados(itens);
+      setAbasIgnoradas(ignoradas);
+      setFileName(file.name);
+      setStep("preview");
+    } catch (e) {
+      console.error(e);
+      setError("Não consegui ler esse arquivo. Verifique se é um .xlsx ou .xls válido.");
+    }
+  }
+
+  async function handleFileManual(file) {
+    setError("");
+    if (!file) return;
+    try {
+      const buffer = await file.arrayBuffer();
+      const wb = XLSX.read(buffer, { type: "array" });
+      const firstSheetName = wb.SheetNames[0];
+      const sheet = wb.Sheets[firstSheetName];
+      const asArrays = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "", raw: false });
+
+      const nonEmpty = asArrays.filter((r) => r.some((cell) => String(cell).trim() !== ""));
+      if (nonEmpty.length < 2) {
+        setError("Não encontrei dados suficientes nessa planilha. Confira se há um cabeçalho e ao menos uma linha de dados.");
+        return;
+      }
+
+      const headerRow = nonEmpty[0].map((h) => String(h).trim());
+      const dataRows = nonEmpty.slice(1);
+
+      setHeaders(headerRow);
+      setRows(dataRows);
+      setFileName(file.name);
+
+      setMapping({
+        posto: guessColumn(headerRow, ["posto", "cliente", "local", "unidade", "site"]),
+        equipamento: guessColumn(headerRow, ["equipamento", "item", "produto", "descrição", "descricao"]),
+        patrimonio: guessColumn(headerRow, ["patrim", "tombamento", "tag", "número", "numero"]),
+        categoria: guessColumn(headerRow, ["categoria", "tipo", "grupo"]),
+      });
+      setStep("mapear");
+    } catch (e) {
+      console.error(e);
+      setError("Não consegui ler esse arquivo. Verifique se é um .xlsx, .xls ou .csv válido.");
+    }
+  }
+
+  function onDrop(e) {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (!file) return;
+    if (modo === "abas") handleFileAbas(file);
+    else if (modo === "manual") handleFileManual(file);
+  }
+
+  // resumo por posto para a pré-visualização do modo "abas"
+  const resumoPorPosto = useMemo(() => {
+    const map = new Map();
+    itensDetectados.forEach((it) => {
+      if (!map.has(it.posto)) map.set(it.posto, { total: 0, comPatrimonio: 0 });
+      const e = map.get(it.posto);
+      e.total++;
+      if (it.patrimonio) e.comPatrimonio++;
+    });
+    return Array.from(map.entries()).map(([posto, v]) => ({ posto, ...v }));
+  }, [itensDetectados]);
+
+  async function confirmarImportacaoAbas() {
+    const postosAtuais = [...postos];
+    const equipAtuais = [...equipamentos];
+    const patrimoniosExistentes = new Set(
+      equipAtuais.filter((e) => e.patrimonio).map((e) => normalize(e.patrimonio))
+    );
+
+    let postosCriados = 0;
+    let equipamentosImportados = 0;
+    let duplicadosIgnorados = 0;
+
+    for (const it of itensDetectados) {
+      let posto = postosAtuais.find((p) => normalize(p.nome) === normalize(it.posto));
+      if (!posto) {
+        posto = { id: uid(), nome: it.posto, endereco: "", responsavel: "" };
+        postosAtuais.push(posto);
+        postosCriados++;
+      }
+
+      if (it.patrimonio && patrimoniosExistentes.has(normalize(it.patrimonio))) {
+        duplicadosIgnorados++;
+        continue;
+      }
+
+      equipAtuais.push({
+        id: uid(),
+        nome: it.equipamento,
+        patrimonio: it.patrimonio,
+        categoria: "",
+        postoAtualId: posto.id,
+        status: "ativo",
+        observacoes: it.observacao || "",
+        dataCadastro: todayISO(),
+        dataEntrega: todayISO(),
+      });
+      if (it.patrimonio) patrimoniosExistentes.add(normalize(it.patrimonio));
+      equipamentosImportados++;
+    }
+
+    await persistPostos(postosAtuais);
+    await persistEquip(equipAtuais);
+
+    setResultado({
+      postosCriados,
+      equipamentosImportados,
+      duplicadosIgnorados,
+      linhasIgnoradas: abasIgnoradas.length,
+    });
+    setStep("resultado");
+    notify("Importação concluída");
+  }
+
+  async function confirmarImportacaoManual() {
+    if (mapping.posto === "" || mapping.equipamento === "") {
+      setError("Selecione ao menos as colunas de Posto e Equipamento.");
+      return;
+    }
+    setError("");
+
+    const postosAtuais = [...postos];
+    const equipAtuais = [...equipamentos];
+    const patrimoniosExistentes = new Set(
+      equipAtuais.filter((e) => e.patrimonio).map((e) => normalize(e.patrimonio))
+    );
+
+    let postosCriados = 0;
+    let equipamentosImportados = 0;
+    let duplicadosIgnorados = 0;
+    let linhasIgnoradas = 0;
+
+    for (const row of rows) {
+      const postoNomeCel = String(row[mapping.posto] ?? "").trim();
+      const equipNomeCel = String(row[mapping.equipamento] ?? "").trim();
+      const patrimonioCel = mapping.patrimonio !== "" ? String(row[mapping.patrimonio] ?? "").trim() : "";
+      const categoriaCel = mapping.categoria !== "" ? String(row[mapping.categoria] ?? "").trim() : "";
+
+      if (!equipNomeCel) {
+        linhasIgnoradas++;
+        continue;
+      }
+
+      let posto = postoNomeCel
+        ? postosAtuais.find((p) => normalize(p.nome) === normalize(postoNomeCel))
+        : null;
+      if (!posto && postoNomeCel) {
+        posto = { id: uid(), nome: postoNomeCel, endereco: "", responsavel: "" };
+        postosAtuais.push(posto);
+        postosCriados++;
+      }
+
+      if (patrimonioCel && patrimoniosExistentes.has(normalize(patrimonioCel))) {
+        duplicadosIgnorados++;
+        continue;
+      }
+
+      equipAtuais.push({
+        id: uid(),
+        nome: equipNomeCel,
+        patrimonio: patrimonioCel,
+        categoria: categoriaCel,
+        postoAtualId: posto ? posto.id : null,
+        status: "ativo",
+        observacoes: "",
+        dataCadastro: todayISO(),
+      });
+      if (patrimonioCel) patrimoniosExistentes.add(normalize(patrimonioCel));
+      equipamentosImportados++;
+    }
+
+    await persistPostos(postosAtuais);
+    await persistEquip(equipAtuais);
+
+    setResultado({ postosCriados, equipamentosImportados, duplicadosIgnorados, linhasIgnoradas });
+    setStep("resultado");
+    notify("Importação concluída");
+  }
+
+  const previewRowsManual = rows.slice(0, 5);
+
+  return (
+    <div>
+      <SectionHeader
+        title="Importar planilha"
+        subtitle="Traga postos e equipamentos de uma planilha existente"
+      />
+
+      {/* Escolha de modo */}
+      {!modo && (
+        <div className="mode-select-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, maxWidth: 720 }}>
+          <button
+            onClick={() => setModo("abas")}
+            style={{ textAlign: "left", background: "var(--surface)", border: "1.5px solid var(--border)", borderRadius: 14, padding: 20, cursor: "pointer" }}
+            onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--primary)")}
+            onMouseLeave={(e) => (e.currentTarget.style.borderColor = "var(--border)")}
+          >
+            <div style={{ width: 38, height: 38, borderRadius: 10, background: "var(--primary-soft)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 12 }}>
+              <FileSpreadsheet size={18} color="var(--primary)" />
+            </div>
+            <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 14.5, color: "var(--text-primary)", marginBottom: 4 }}>
+              Uma aba por posto
+            </div>
+            <div style={{ fontSize: 12.5, color: "var(--text-secondary)", lineHeight: 1.5 }}>
+              Cada aba da planilha é um posto, com colunas de EQUIPAMENTO, Nº PATRIMÔNIO e QUANTIDADE. Quando não há patrimônio, cada unidade da quantidade vira um equipamento cadastrado separadamente. Detecção automática — sem precisar mapear colunas.
+            </div>
+          </button>
+
+          <button
+            onClick={() => setModo("manual")}
+            style={{ textAlign: "left", background: "var(--surface)", border: "1.5px solid var(--border)", borderRadius: 14, padding: 20, cursor: "pointer" }}
+            onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--primary)")}
+            onMouseLeave={(e) => (e.currentTarget.style.borderColor = "var(--border)")}
+          >
+            <div style={{ width: 38, height: 38, borderRadius: 10, background: "var(--accent-soft)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 12 }}>
+              <Upload size={18} color="var(--accent)" />
+            </div>
+            <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 14.5, color: "var(--text-primary)", marginBottom: 4 }}>
+              Planilha única
+            </div>
+            <div style={{ fontSize: 12.5, color: "var(--text-secondary)", lineHeight: 1.5 }}>
+              Uma única aba, com uma linha por equipamento e uma coluna indicando o posto. Você escolhe manualmente qual coluna é qual.
+            </div>
+          </button>
+        </div>
+      )}
+
+      {/* Upload */}
+      {modo && step === "upload" && (
+        <div>
+          <button onClick={resetAll} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "var(--text-secondary)", fontSize: 12.5, cursor: "pointer", marginBottom: 14 }}>
+            <ArrowLeft size={13} /> Escolher outro modo
+          </button>
+          <div
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={onDrop}
+            onClick={() => inputRef.current?.click()}
+            style={{
+              background: dragOver ? "var(--primary-soft)" : "var(--surface)",
+              border: `1.5px dashed ${dragOver ? "var(--primary)" : "var(--border)"}`,
+              borderRadius: 14,
+              padding: "56px 20px",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer",
+              transition: "background 0.15s, border-color 0.15s",
+            }}
+          >
+            <input
+              ref={inputRef}
+              type="file"
+              accept={modo === "abas" ? ".xlsx,.xls" : ".xlsx,.xls,.csv"}
+              style={{ display: "none" }}
+              onChange={(e) => (modo === "abas" ? handleFileAbas(e.target.files?.[0]) : handleFileManual(e.target.files?.[0]))}
+            />
+            <div style={{ width: 52, height: 52, borderRadius: 14, background: "var(--primary-soft)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 16 }}>
+              <Upload size={22} color="var(--primary)" />
+            </div>
+            <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 15, color: "var(--text-primary)" }}>
+              Arraste sua planilha aqui
+            </div>
+            <div style={{ fontSize: 12.5, color: "var(--text-secondary)", marginTop: 4 }}>
+              ou clique para selecionar {modo === "abas" ? "um arquivo .xlsx ou .xls" : "um arquivo .xlsx, .xls ou .csv"}
+            </div>
+            {error && <div style={{ color: "var(--danger)", fontSize: 12.5, marginTop: 16, maxWidth: 420, textAlign: "center" }}>{error}</div>}
+          </div>
+        </div>
+      )}
+
+      {/* Preview modo "abas" */}
+      {modo === "abas" && step === "preview" && (
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 18, fontSize: 12.5, color: "var(--text-secondary)" }}>
+            <FileSpreadsheet size={14} color="var(--primary)" />
+            {fileName} · {resumoPorPosto.length} posto{resumoPorPosto.length !== 1 ? "s" : ""} reconhecido{resumoPorPosto.length !== 1 ? "s" : ""} · {itensDetectados.length} equipamento{itensDetectados.length !== 1 ? "s" : ""} no total
+            <button onClick={() => { setStep("upload"); setError(""); }} style={{ marginLeft: "auto", background: "none", border: "none", color: "var(--primary)", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>
+              Trocar arquivo
+            </button>
+          </div>
+
+          {abasIgnoradas.length > 0 && (
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 9, background: "var(--warn-bg)", border: "1px solid #EAD7AC", borderRadius: 10, padding: "10px 14px", marginBottom: 16, fontSize: 12.5, color: "#8A5D14" }}>
+              <AlertTriangle size={15} style={{ flexShrink: 0, marginTop: 1 }} />
+              <div>
+                {abasIgnoradas.length} aba{abasIgnoradas.length !== 1 ? "s" : ""} não reconhecida{abasIgnoradas.length !== 1 ? "s" : ""} (sem colunas de EQUIPAMENTO/QUANTIDADE/PATRIMÔNIO identificáveis) e não {abasIgnoradas.length !== 1 ? "foram importadas" : "foi importada"}: {abasIgnoradas.join(", ")}
+              </div>
+            </div>
+          )}
+
+          <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden", marginBottom: 18 }}>
+            <div className="table-scroll">
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <thead>
+                <tr style={{ borderBottom: "1px solid var(--border)", background: "var(--hover)" }}>
+                  <th style={{ textAlign: "left", padding: "10px 16px", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--text-secondary)", fontWeight: 700 }}>Posto</th>
+                  <th style={{ textAlign: "left", padding: "10px 16px", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--text-secondary)", fontWeight: 700 }}>Equipamentos a importar</th>
+                  <th style={{ textAlign: "left", padding: "10px 16px", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--text-secondary)", fontWeight: 700 }}>Com patrimônio</th>
+                </tr>
+              </thead>
+              <tbody>
+                {resumoPorPosto.map((r) => (
+                  <tr key={r.posto} style={{ borderBottom: "1px solid var(--border)" }}>
+                    <td style={{ padding: "10px 16px", fontWeight: 600, color: "var(--text-primary)" }}>{r.posto}</td>
+                    <td style={{ padding: "10px 16px", color: "var(--text-secondary)" }}>{r.total}</td>
+                    <td style={{ padding: "10px 16px", color: "var(--text-secondary)" }}>{r.comPatrimonio}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            </div>
+          </div>
+
+          {error && <div style={{ color: "var(--danger)", fontSize: 12.5, marginBottom: 12 }}>{error}</div>}
+
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={() => setStep("upload")} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "none", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 16px", fontSize: 13, cursor: "pointer", color: "var(--text-secondary)" }}>
+              <ArrowLeft size={14} /> Voltar
+            </button>
+            <PrimaryButton icon={Upload} onClick={confirmarImportacaoAbas}>
+              Importar {itensDetectados.length} equipamento{itensDetectados.length !== 1 ? "s" : ""}
+            </PrimaryButton>
+          </div>
+        </div>
+      )}
+
+      {/* Mapeamento modo "manual" */}
+      {modo === "manual" && step === "mapear" && (
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 18, fontSize: 12.5, color: "var(--text-secondary)" }}>
+            <FileSpreadsheet size={14} color="var(--primary)" />
+            {fileName} · {rows.length} linha{rows.length !== 1 ? "s" : ""} encontrada{rows.length !== 1 ? "s" : ""}
+            <button onClick={() => setStep("upload")} style={{ marginLeft: "auto", background: "none", border: "none", color: "var(--primary)", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>
+              Trocar arquivo
+            </button>
+          </div>
+
+          <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 20, marginBottom: 18 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 14 }}>
+              Diga qual coluna é cada informação
+            </div>
+            <div className="grid-2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+              <ColumnPicker label="Posto *" headers={headers} value={mapping.posto} onChange={(v) => setMapping({ ...mapping, posto: v })} />
+              <ColumnPicker label="Equipamento *" headers={headers} value={mapping.equipamento} onChange={(v) => setMapping({ ...mapping, equipamento: v })} />
+              <ColumnPicker label="Nº de patrimônio (opcional)" headers={headers} value={mapping.patrimonio} onChange={(v) => setMapping({ ...mapping, patrimonio: v })} allowNone />
+              <ColumnPicker label="Categoria (opcional)" headers={headers} value={mapping.categoria} onChange={(v) => setMapping({ ...mapping, categoria: v })} allowNone />
+            </div>
+          </div>
+
+          {previewRowsManual.length > 0 && (mapping.posto !== "" || mapping.equipamento !== "") && (
+            <div style={{ marginBottom: 18 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 10 }}>
+                Pré-visualização
+              </div>
+              <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
+                <div className="table-scroll">
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+                  <thead>
+                    <tr style={{ borderBottom: "1px solid var(--border)", background: "var(--hover)" }}>
+                      <th style={{ textAlign: "left", padding: "8px 14px", color: "var(--text-secondary)", fontWeight: 700 }}>Posto</th>
+                      <th style={{ textAlign: "left", padding: "8px 14px", color: "var(--text-secondary)", fontWeight: 700 }}>Equipamento</th>
+                      <th style={{ textAlign: "left", padding: "8px 14px", color: "var(--text-secondary)", fontWeight: 700 }}>Patrimônio</th>
+                      <th style={{ textAlign: "left", padding: "8px 14px", color: "var(--text-secondary)", fontWeight: 700 }}>Categoria</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {previewRowsManual.map((r, i) => (
+                      <tr key={i} style={{ borderBottom: "1px solid var(--border)" }}>
+                        <td style={{ padding: "8px 14px" }}>{mapping.posto !== "" ? r[mapping.posto] : "-"}</td>
+                        <td style={{ padding: "8px 14px", fontWeight: 600 }}>{mapping.equipamento !== "" ? r[mapping.equipamento] : "-"}</td>
+                        <td style={{ padding: "8px 14px" }}>{mapping.patrimonio !== "" ? (r[mapping.patrimonio] || "-") : "-"}</td>
+                        <td style={{ padding: "8px 14px" }}>{mapping.categoria !== "" ? (r[mapping.categoria] || "-") : "-"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {error && <div style={{ color: "var(--danger)", fontSize: 12.5, marginBottom: 12 }}>{error}</div>}
+
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={() => setStep("upload")} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "none", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 16px", fontSize: 13, cursor: "pointer", color: "var(--text-secondary)" }}>
+              <ArrowLeft size={14} /> Voltar
+            </button>
+            <PrimaryButton icon={Upload} onClick={confirmarImportacaoManual}>
+              Importar {rows.length} linha{rows.length !== 1 ? "s" : ""}
+            </PrimaryButton>
+          </div>
+        </div>
+      )}
+
+      {/* Resultado (comum aos dois modos) */}
+      {step === "resultado" && resultado && (
+        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, padding: 28, maxWidth: 520 }}>
+          <div style={{ width: 44, height: 44, borderRadius: 12, background: "var(--success-bg)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 16 }}>
+            <CheckCircle2 size={22} color="var(--success)" />
+          </div>
+          <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 18, color: "var(--text-primary)", marginBottom: 4 }}>
+            Importação concluída
+          </div>
+          <div style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 20 }}>
+            Os dados de "{fileName}" foram adicionados ao sistema.
+          </div>
+
+          <div className="grid-2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 22 }}>
+            <ResultStat label="Postos criados" value={resultado.postosCriados} />
+            <ResultStat label="Equipamentos importados" value={resultado.equipamentosImportados} />
+            <ResultStat label="Duplicados ignorados" value={resultado.duplicadosIgnorados} hint="mesmo nº de patrimônio já cadastrado" />
+            <ResultStat label="Abas/linhas ignoradas" value={resultado.linhasIgnoradas} hint="não reconhecidas ou vazias" />
+          </div>
+
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={resetAll} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "none", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 16px", fontSize: 13, cursor: "pointer", color: "var(--text-secondary)" }}>
+              Importar outra planilha
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ColumnPicker({ label, headers, value, onChange, allowNone }) {
+  return (
+    <Field label={label}>
+      <select style={inputStyle} value={value} onChange={(e) => onChange(e.target.value)}>
+        {allowNone && <option value="">Não importar</option>}
+        {!allowNone && <option value="">Selecione…</option>}
+        {headers.map((h, i) => (
+          <option key={i} value={i}>{h || `Coluna ${i + 1}`}</option>
+        ))}
+      </select>
+    </Field>
+  );
+}
+
+function ResultStat({ label, value, hint }) {
+  return (
+    <div style={{ background: "var(--hover)", borderRadius: 10, padding: "12px 14px" }}>
+      <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 700, color: "var(--text-primary)" }}>{value}</div>
+      <div style={{ fontSize: 11.5, color: "var(--text-secondary)", marginTop: 2 }}>{label}</div>
+      {hint && <div style={{ fontSize: 10.5, color: "var(--text-tertiary)", marginTop: 1 }}>{hint}</div>}
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+  </script>
+</body>
+</html>
