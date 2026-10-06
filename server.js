@@ -1,6 +1,8 @@
 const express = require("express");
 const cors = require("cors");
 const { Pool } = require("pg");
+const fs = require("fs");
+const path = require("path");
 
 const app = express();
 const port = process.env.PORT || 10000;
@@ -35,6 +37,54 @@ async function init() {
     )
   `);
   console.log("Banco inicializado.");
+
+  const migrationKey = "migration:2026-10-06-planilha-oficial-v1";
+  const migration = await pool.query("SELECT value FROM app_storage WHERE key = $1", [migrationKey]);
+
+  if (!migration.rowCount) {
+    const seedPath = path.join(__dirname, "seed-data.json");
+    const seed = JSON.parse(fs.readFileSync(seedPath, "utf8"));
+
+    await pool.query("BEGIN");
+    try {
+      await pool.query(
+        `INSERT INTO app_storage (key, value, updated_at)
+         VALUES ('postos', $1, NOW())
+         ON CONFLICT (key)
+         DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+        [JSON.stringify(seed.postos)]
+      );
+
+      await pool.query(
+        `INSERT INTO app_storage (key, value, updated_at)
+         VALUES ('equipamentos', $1, NOW())
+         ON CONFLICT (key)
+         DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+        [JSON.stringify(seed.equipamentos)]
+      );
+
+      await pool.query(
+        `INSERT INTO app_storage (key, value, updated_at)
+         VALUES ($1, $2, NOW())
+         ON CONFLICT (key)
+         DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+        [migrationKey, JSON.stringify({
+          appliedAt: new Date().toISOString(),
+          source: seed.version,
+          postos: seed.postos.length,
+          equipamentos: seed.equipamentos.length
+        })]
+      );
+
+      await pool.query("COMMIT");
+      console.log(`Migração da planilha aplicada: ${seed.postos.length} postos e ${seed.equipamentos.length} equipamentos.`);
+    } catch (error) {
+      await pool.query("ROLLBACK");
+      throw error;
+    }
+  } else {
+    console.log("Migração da planilha já aplicada anteriormente.");
+  }
 }
 
 app.get("/health", async (req, res) => {
