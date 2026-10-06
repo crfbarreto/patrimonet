@@ -1747,11 +1747,22 @@ function Dashboard({ equipamentos, postos, movimentacoes, postoNome, setTab }) {
 
     const porPosto = useMemo(() => {
         const map = {};
-        postos.forEach((p) => (map[p.id] = 0));
-        equipamentos.forEach((e) => {
-            if (e.postoAtualId && map[e.postoAtualId] !== undefined) map[e.postoAtualId]++;
+        postos.forEach((p) => {
+            map[p.id] = { count: 0, value: 0 };
         });
-        return postos.map((p) => ({ posto: p, count: map[p.id] || 0 })).sort((a, b) => b.count - a.count);
+        equipamentos.forEach((e) => {
+            if (e.postoAtualId && map[e.postoAtualId]) {
+                map[e.postoAtualId].count++;
+                map[e.postoAtualId].value += Number(e.valor) || 0;
+            }
+        });
+        return postos
+            .map((p) => ({
+                posto: p,
+                count: map[p.id]?.count || 0,
+                value: map[p.id]?.value || 0
+            }))
+            .sort((a, b) => b.value - a.value || b.count - a.count);
     }, [postos, equipamentos]);
 
     const rankingTipos = useMemo(() => {
@@ -1809,16 +1820,21 @@ function Dashboard({ equipamentos, postos, movimentacoes, postoNome, setTab }) {
                     semPatrimonio.toLocaleString("pt-BR"), " equipamento", semPatrimonio !== 1 ? "s" : "", " sem número de patrimônio.")),
 
             React.createElement("div", { style: { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 18 } },
-                React.createElement("h3", { style: { margin: "0 0 14px", fontSize: 14.5 } }, "Maiores postos"),
+                React.createElement("div", { style: { marginBottom: 14 } },
+                    React.createElement("h3", { style: { margin: 0, fontSize: 14.5 } }, "Postos com maior valor alocado"),
+                    React.createElement("div", { style: { marginTop: 3, fontSize: 11.5, color: "var(--text-secondary)" } }, "Ranking pelo valor total dos equipamentos em cada posto")),
                 porPosto.length === 0 ? React.createElement(EmptyState, { icon: MapPin, title: "Nenhum posto cadastrado" }) :
-                porPosto.slice(0, 6).map(({ posto, count }, i) => {
-                    const max = Math.max(porPosto[0]?.count || 1, 1);
-                    return React.createElement("div", { key: posto.id, style: { marginBottom: 11 } },
-                        React.createElement("div", { style: { display: "flex", justifyContent: "space-between", fontSize: 12.2, marginBottom: 4 } },
-                            React.createElement("span", { style: { fontWeight: 600 } }, i + 1, ". ", posto.nome),
-                            React.createElement("span", { style: { color: "var(--text-secondary)" } }, count)),
+                porPosto.slice(0, 6).map(({ posto, count, value }, i) => {
+                    const maxValue = Math.max(porPosto[0]?.value || 1, 1);
+                    return React.createElement("div", { key: posto.id, style: { marginBottom: 13 } },
+                        React.createElement("div", { style: { display: "flex", justifyContent: "space-between", gap: 12, fontSize: 12.2, marginBottom: 4 } },
+                            React.createElement("div", { style: { minWidth: 0 } },
+                                React.createElement("span", { style: { fontWeight: 700 } }, i + 1, ". ", posto.nome),
+                                React.createElement("div", { style: { marginTop: 2, fontSize: 10.8, color: "var(--text-tertiary)" } },
+                                    count, " equipamento", count !== 1 ? "s" : "")),
+                            React.createElement("span", { style: { color: "var(--primary)", fontWeight: 700, whiteSpace: "nowrap" } }, fmtMoeda(value))),
                         React.createElement("div", { style: { height: 7, background: "var(--hover)", borderRadius: 20, overflow: "hidden" } },
-                            React.createElement("div", { style: { width: `${(count / max) * 100}%`, height: "100%", background: "var(--primary)", borderRadius: 20 } })));
+                            React.createElement("div", { style: { width: `${Math.max((value / maxValue) * 100, value ? 2 : 0)}%`, height: "100%", background: "var(--primary)", borderRadius: 20 } })));
                 }))),
 
         React.createElement("div", { className: "grid-2", style: { display: "grid", gridTemplateColumns: "1.1fr .9fr", gap: 18 } },
