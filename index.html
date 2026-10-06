@@ -2288,154 +2288,373 @@ function PostoModal({ initial, onClose, onSave }) {
 }
 // ---------- Movimentar ----------
 function MovimentarView({ equipamentos, postos, persistEquip, movimentacoes, persistMov, postoNome, notify }) {
-    const [postoOrigemId, setPostoOrigemId] = useState(""); // "" = nenhum | posto.id | "__sem_posto__"
-    const [selecaoKey, setSelecaoKey] = useState(""); // chave da linha selecionada (individual ou grupo)
-    const [quantidadeMover, setQuantidadeMover] = useState("1");
+    const [postoOrigemId, setPostoOrigemId] = useState("");
+    const [selecoes, setSelecoes] = useState({});
     const [postoDestinoId, setPostoDestinoId] = useState("");
     const [responsavel, setResponsavel] = useState("");
     const [observacao, setObservacao] = useState("");
     const [error, setError] = useState("");
+
     const disponiveisParaMover = equipamentos.filter((e) => e.status !== "baixa");
-    // opções de posto de origem, só as que têm ao menos 1 equipamento disponível
+
     const origensDisponiveis = useMemo(() => {
         const comEquip = new Set(disponiveisParaMover.map((e) => e.postoAtualId || "__sem_posto__"));
         const lista = postos.filter((p) => comEquip.has(p.id)).map((p) => ({ id: p.id, nome: p.nome }));
-        if (comEquip.has("__sem_posto__"))
-            lista.push({ id: "__sem_posto__", nome: "Sem posto / em estoque" });
+        if (comEquip.has("__sem_posto__")) lista.push({ id: "__sem_posto__", nome: "Sem posto / em estoque" });
         return lista;
     }, [postos, disponiveisParaMover]);
-    // equipamentos do posto de origem escolhido, agrupando itens idênticos sem patrimônio
+
     const linhasOrigem = useMemo(() => {
-        if (!postoOrigemId)
-            return [];
-        const doPosto = disponiveisParaMover.filter((e) => postoOrigemId === "__sem_posto__" ? !e.postoAtualId : e.postoAtualId === postoOrigemId);
+        if (!postoOrigemId) return [];
+        const doPosto = disponiveisParaMover.filter((e) =>
+            postoOrigemId === "__sem_posto__" ? !e.postoAtualId : e.postoAtualId === postoOrigemId
+        );
         return agruparEquipamentos(doPosto);
     }, [disponiveisParaMover, postoOrigemId]);
+
     function keyDaLinha(linha) {
-        return linha.tipo === "individual" ? `ind:${linha.equipamento.id}` : `grp:${linha.ids.join(",")}`;
+        return linha.tipo === "individual"
+            ? `ind:${linha.equipamento.id}`
+            : `grp:${linha.ids.join(",")}`;
     }
-    const selecionado = linhasOrigem.find((l) => keyDaLinha(l) === selecaoKey) || null;
-    const isGrupo = selecionado?.tipo === "grupo";
-    const nomeSelecionado = selecionado ? (isGrupo ? selecionado.nome : selecionado.equipamento.nome) : "";
-    const patrimonioSelecionado = selecionado && !isGrupo ? selecionado.equipamento.patrimonio : "";
-    const qtdMaxima = isGrupo ? selecionado.quantidade : 1;
+
+    function linhaInfo(linha) {
+        const individual = linha.tipo === "individual";
+        return {
+            nome: individual ? linha.equipamento.nome : linha.nome,
+            patrimonio: individual ? (linha.equipamento.patrimonio || "") : "",
+            max: individual ? 1 : linha.quantidade,
+            ids: individual ? [linha.equipamento.id] : linha.ids,
+            individual
+        };
+    }
+
+    const selecionadas = useMemo(() => {
+        return linhasOrigem.map((linha) => {
+            const key = keyDaLinha(linha);
+            const qtd = Number(selecoes[key] || 0);
+            return { linha, key, qtd, ...linhaInfo(linha) };
+        }).filter((x) => x.qtd > 0);
+    }, [linhasOrigem, selecoes]);
+
+    const totalUnidades = selecionadas.reduce((s, x) => s + x.qtd, 0);
+
     function handleTrocarOrigem(valor) {
         setPostoOrigemId(valor);
-        setSelecaoKey("");
-        setQuantidadeMover("1");
+        setSelecoes({});
+        setPostoDestinoId("");
         setError("");
     }
-    function handleSelecionar(valor) {
-        setSelecaoKey(valor);
-        setQuantidadeMover("1");
+
+    function setQuantidadeLinha(linha, value) {
+        const key = keyDaLinha(linha);
+        const { max } = linhaInfo(linha);
+        let qtd = parseInt(value, 10);
+        if (isNaN(qtd) || qtd < 0) qtd = 0;
+        if (qtd > max) qtd = max;
+        setSelecoes((prev) => ({ ...prev, [key]: qtd }));
         setError("");
     }
+
+    function toggleLinha(linha, checked) {
+        const key = keyDaLinha(linha);
+        setSelecoes((prev) => ({ ...prev, [key]: checked ? 1 : 0 }));
+        setError("");
+    }
+
     async function confirmar() {
         setError("");
-        if (!postoOrigemId)
-            return setError("Selecione o posto de origem.");
-        if (!selecionado)
-            return setError("Selecione o equipamento.");
-        if (!postoDestinoId)
-            return setError("Selecione o posto de destino.");
+        if (!postoOrigemId) return setError("Selecione o posto de origem.");
+        if (selecionadas.length === 0) return setError("Selecione ao menos um equipamento.");
+        if (!postoDestinoId) return setError("Selecione o posto de destino.");
+
         const origemId = postoOrigemId === "__sem_posto__" ? null : postoOrigemId;
-        if (origemId === postoDestinoId)
-            return setError("O equipamento já está nesse posto.");
-        let qtd = 1;
-        let idsMover = [];
-        if (isGrupo) {
-            qtd = parseInt(quantidadeMover, 10);
-            if (isNaN(qtd) || qtd < 1 || qtd > selecionado.quantidade) {
-                setError(`Informe uma quantidade entre 1 e ${selecionado.quantidade}.`);
-                return;
-            }
-            idsMover = selecionado.ids.slice(0, qtd);
+        if (origemId === postoDestinoId) return setError("O posto de destino deve ser diferente do posto de origem.");
+
+        const idsMover = [];
+        const novosRegistros = [];
+
+        for (const item of selecionadas) {
+            if (item.qtd < 1 || item.qtd > item.max) return setError(`Quantidade inválida para ${item.nome}.`);
+
+            const idsSelecionados = item.ids.slice(0, item.qtd);
+            idsMover.push(...idsSelecionados);
+
+            novosRegistros.push({
+                id: uid(),
+                equipamentoId: idsSelecionados[0],
+                equipamentoNome: item.nome,
+                patrimonio: item.individual ? item.patrimonio : "",
+                quantidade: item.qtd,
+                postoOrigemId: origemId,
+                postoOrigemNome: origemId ? postoNome(origemId) : "Estoque / sem posto",
+                postoDestinoId,
+                postoDestinoNome: postoNome(postoDestinoId),
+                data: todayISO(),
+                responsavel: responsavel.trim(),
+                observacao: observacao.trim(),
+            });
         }
-        else {
-            idsMover = [selecionado.equipamento.id];
-        }
-        const registro = {
-            id: uid(),
-            equipamentoId: idsMover[0],
-            equipamentoNome: nomeSelecionado,
-            patrimonio: patrimonioSelecionado || "",
-            quantidade: qtd,
-            postoOrigemId: origemId,
-            postoOrigemNome: origemId ? postoNome(origemId) : "Estoque / sem posto",
-            postoDestinoId,
-            postoDestinoNome: postoNome(postoDestinoId),
-            data: todayISO(),
-            responsavel: responsavel.trim(),
-            observacao: observacao.trim(),
-        };
-        await persistMov([...movimentacoes, registro]);
-        await persistEquip(equipamentos.map((e) => (idsMover.includes(e.id) ? { ...e, postoAtualId: postoDestinoId } : e)));
-        notify(qtd > 1 ? `${qtd} unidades movimentadas` : "Movimentação registrada");
+
+        await persistMov([...movimentacoes, ...novosRegistros]);
+        await persistEquip(equipamentos.map((e) =>
+            idsMover.includes(e.id) ? { ...e, postoAtualId: postoDestinoId } : e
+        ));
+
+        notify(`${totalUnidades} unidade${totalUnidades !== 1 ? "s" : ""} movimentada${totalUnidades !== 1 ? "s" : ""}`);
+
         setPostoOrigemId("");
-        setSelecaoKey("");
-        setQuantidadeMover("1");
+        setSelecoes({});
         setPostoDestinoId("");
         setResponsavel("");
         setObservacao("");
     }
-    return (React.createElement("div", null,
-        React.createElement(SectionHeader, { title: "Movimentar equipamento", subtitle: "Escolha o posto de origem para ver os equipamentos dispon\u00EDveis nele" }),
-        postos.length === 0 || equipamentos.length === 0 ? (React.createElement("div", { style: { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12 } },
-            React.createElement(EmptyState, { icon: ArrowLeftRight, title: "Cadastre equipamentos e postos primeiro", subtitle: "Voc\u00EA precisa de ao menos um equipamento e um posto cadastrados para registrar uma movimenta\u00E7\u00E3o." }))) : (React.createElement("div", { className: "grid-2", style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 } },
-            React.createElement("div", { style: { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 22 } },
-                React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 14 } },
-                    React.createElement(Field, { label: "Posto de origem *" },
-                        React.createElement("select", { style: inputStyle, value: postoOrigemId, onChange: (e) => handleTrocarOrigem(e.target.value) },
-                            React.createElement("option", { value: "" }, "Selecione o posto de onde vai sair\u2026"),
-                            origensDisponiveis.map((p) => (React.createElement("option", { key: p.id, value: p.id }, p.nome))))),
-                    React.createElement(Field, { label: "Equipamento *" },
-                        React.createElement("select", { style: inputStyle, value: selecaoKey, onChange: (e) => handleSelecionar(e.target.value), disabled: !postoOrigemId },
-                            React.createElement("option", { value: "" }, postoOrigemId ? "Selecione…" : "Escolha primeiro o posto de origem"),
-                            linhasOrigem.map((l) => {
-                                const key = keyDaLinha(l);
-                                if (l.tipo === "individual") {
-                                    const e = l.equipamento;
-                                    return (React.createElement("option", { key: key, value: key },
-                                        e.nome,
-                                        e.patrimonio ? ` — Nº ${e.patrimonio}` : ""));
+
+    return React.createElement("div", null,
+        React.createElement(SectionHeader, {
+            title: "Movimentar equipamentos",
+            subtitle: "Selecione vários equipamentos do mesmo posto e mova todos para um único destino"
+        }),
+        postos.length === 0 || equipamentos.length === 0
+            ? React.createElement("div", {
+                style: { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12 }
+            }, React.createElement(EmptyState, {
+                icon: ArrowLeftRight,
+                title: "Cadastre equipamentos e postos primeiro",
+                subtitle: "Você precisa de ao menos um equipamento e um posto cadastrados para registrar uma movimentação."
+            }))
+            : React.createElement("div", {
+                className: "grid-2",
+                style: { display: "grid", gridTemplateColumns: "1.2fr .8fr", gap: 20 }
+            },
+                React.createElement("div", {
+                    style: { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 22 }
+                },
+                    React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 14 } },
+                        React.createElement(Field, { label: "Posto de origem *" },
+                            React.createElement("select", {
+                                style: inputStyle,
+                                value: postoOrigemId,
+                                onChange: (e) => handleTrocarOrigem(e.target.value)
+                            },
+                                React.createElement("option", { value: "" }, "Selecione o posto de onde vai sair…"),
+                                origensDisponiveis.map((p) => React.createElement("option", { key: p.id, value: p.id }, p.nome))
+                            )
+                        ),
+
+                        postoOrigemId && React.createElement("div", null,
+                            React.createElement("div", {
+                                style: { fontSize: 12, fontWeight: 700, color: "var(--text-secondary)", marginBottom: 8 }
+                            }, "Equipamentos disponíveis"),
+                            React.createElement("div", {
+                                style: {
+                                    border: "1px solid var(--border)",
+                                    borderRadius: 10,
+                                    overflow: "hidden",
+                                    maxHeight: 390,
+                                    overflowY: "auto"
                                 }
-                                return (React.createElement("option", { key: key, value: key },
-                                    l.nome,
-                                    " \u2014 qtd ",
-                                    l.quantidade,
-                                    " (sem patrim\u00F4nio)"));
-                            }))),
-                    isGrupo && (React.createElement(Field, { label: `Quantidade a movimentar (máx. ${qtdMaxima})` },
-                        React.createElement("input", { style: inputStyle, type: "number", min: 1, max: qtdMaxima, value: quantidadeMover, onChange: (e) => setQuantidadeMover(e.target.value) }))),
-                    React.createElement("div", { className: "swap-grid", style: { display: "grid", gridTemplateColumns: "1fr auto 1fr", gap: 10, alignItems: "center" } },
-                        React.createElement("div", null,
-                            React.createElement("div", { style: { fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 5 } }, "Posto de origem"),
-                            React.createElement("div", { style: { ...inputStyle, background: "var(--hover)", color: "var(--text-secondary)" } }, postoOrigemId ? (postoOrigemId === "__sem_posto__" ? "Sem posto / em estoque" : postoNome(postoOrigemId)) : "-")),
-                        React.createElement(ArrowLeftRight, { size: 16, color: "var(--text-tertiary)", style: { marginTop: 18 } }),
-                        React.createElement(Field, { label: "Novo posto *" },
-                            React.createElement("select", { style: inputStyle, value: postoDestinoId, onChange: (e) => setPostoDestinoId(e.target.value) },
-                                React.createElement("option", { value: "" }, "Selecione\u2026"),
-                                postos.map((p) => (React.createElement("option", { key: p.id, value: p.id }, p.nome)))))),
-                    React.createElement(Field, { label: "Respons\u00E1vel pela movimenta\u00E7\u00E3o" },
-                        React.createElement("input", { style: inputStyle, value: responsavel, onChange: (e) => setResponsavel(e.target.value), placeholder: "Opcional" })),
-                    React.createElement(Field, { label: "Observa\u00E7\u00E3o" },
-                        React.createElement("textarea", { style: { ...inputStyle, minHeight: 56, resize: "vertical" }, value: observacao, onChange: (e) => setObservacao(e.target.value), placeholder: "Opcional" })),
-                    error && React.createElement("div", { style: { color: "var(--danger)", fontSize: 12.5 } }, error),
-                    React.createElement(PrimaryButton, { icon: ArrowLeftRight, onClick: confirmar }, "Confirmar movimenta\u00E7\u00E3o"))),
-            React.createElement("div", null,
-                React.createElement("div", { style: { fontSize: 12, fontWeight: 700, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 10 } }, "Pr\u00E9-visualiza\u00E7\u00E3o"),
-                selecionado ? (React.createElement("div", { style: { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 18 } },
-                    React.createElement("div", { style: { fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 16, color: "var(--text-primary)" } }, nomeSelecionado),
-                    React.createElement("div", { style: { marginTop: 6 } }, isGrupo ? (React.createElement("span", { style: { fontFamily: "var(--font-mono)", fontSize: 11.5, fontWeight: 700, color: "var(--primary-dark)", background: "var(--primary-soft)", border: "1px dashed #A9CFCC", borderRadius: 20, padding: "2px 8px" } },
-                        "movendo ",
-                        quantidadeMover || 0,
-                        " de ",
-                        qtdMaxima)) : (React.createElement(AssetTag, { value: patrimonioSelecionado }))),
-                    React.createElement("div", { style: { marginTop: 14, display: "flex", alignItems: "center", gap: 10, fontSize: 13 } },
-                        React.createElement("span", { style: { padding: "5px 10px", borderRadius: 7, background: "var(--hover)", color: "var(--text-secondary)" } }, postoOrigemId === "__sem_posto__" ? "Sem posto" : postoNome(postoOrigemId)),
-                        React.createElement(ChevronRight, { size: 14, color: "var(--text-tertiary)" }),
-                        React.createElement("span", { style: { padding: "5px 10px", borderRadius: 7, background: postoDestinoId ? "var(--primary-soft)" : "var(--hover)", color: postoDestinoId ? "var(--primary-dark)" : "var(--text-tertiary)", fontWeight: postoDestinoId ? 600 : 400 } }, postoDestinoId ? postoNome(postoDestinoId) : "destino…")))) : (React.createElement("div", { style: { background: "var(--surface)", border: "1px dashed var(--border)", borderRadius: 12 } },
-                    React.createElement(EmptyState, { icon: Boxes, title: postoOrigemId ? "Selecione um equipamento" : "Selecione o posto de origem", subtitle: "A pr\u00E9-visualiza\u00E7\u00E3o da movimenta\u00E7\u00E3o aparece aqui." }))))))));
+                            },
+                                linhasOrigem.map((linha) => {
+                                    const key = keyDaLinha(linha);
+                                    const info = linhaInfo(linha);
+                                    const qtd = Number(selecoes[key] || 0);
+                                    const checked = qtd > 0;
+
+                                    return React.createElement("div", {
+                                        key,
+                                        style: {
+                                            display: "grid",
+                                            gridTemplateColumns: "28px 1fr 105px",
+                                            gap: 10,
+                                            alignItems: "center",
+                                            padding: "11px 12px",
+                                            borderBottom: "1px solid var(--border)",
+                                            background: checked ? "var(--primary-soft)" : "#fff"
+                                        }
+                                    },
+                                        React.createElement("input", {
+                                            type: "checkbox",
+                                            checked,
+                                            onChange: (e) => toggleLinha(linha, e.target.checked),
+                                            style: { width: 16, height: 16, cursor: "pointer" }
+                                        }),
+                                        React.createElement("div", null,
+                                            React.createElement("div", {
+                                                style: { fontWeight: 700, fontSize: 13, color: "var(--text-primary)" }
+                                            }, info.nome),
+                                            React.createElement("div", {
+                                                style: { fontSize: 11.5, color: "var(--text-secondary)", marginTop: 2 }
+                                            }, info.individual
+                                                ? (info.patrimonio ? `Patrimônio: ${info.patrimonio}` : "1 unidade")
+                                                : `${info.max} unidades disponíveis`)
+                                        ),
+                                        React.createElement("div", null,
+                                            React.createElement("div", {
+                                                style: { fontSize: 10.5, color: "var(--text-tertiary)", marginBottom: 3 }
+                                            }, "Quantidade"),
+                                            React.createElement("input", {
+                                                type: "number",
+                                                min: 0,
+                                                max: info.max,
+                                                value: qtd,
+                                                onChange: (e) => setQuantidadeLinha(linha, e.target.value),
+                                                style: { ...inputStyle, padding: "7px 8px", textAlign: "center" }
+                                            })
+                                        )
+                                    );
+                                })
+                            )
+                        ),
+
+                        React.createElement("div", {
+                            className: "swap-grid",
+                            style: { display: "grid", gridTemplateColumns: "1fr auto 1fr", gap: 10, alignItems: "center" }
+                        },
+                            React.createElement("div", null,
+                                React.createElement("div", {
+                                    style: { fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 5 }
+                                }, "Posto de origem"),
+                                React.createElement("div", {
+                                    style: { ...inputStyle, background: "var(--hover)", color: "var(--text-secondary)" }
+                                }, postoOrigemId
+                                    ? (postoOrigemId === "__sem_posto__" ? "Sem posto / em estoque" : postoNome(postoOrigemId))
+                                    : "-")
+                            ),
+                            React.createElement(ArrowLeftRight, {
+                                size: 16, color: "var(--text-tertiary)", style: { marginTop: 18 }
+                            }),
+                            React.createElement(Field, { label: "Novo posto *" },
+                                React.createElement("select", {
+                                    style: inputStyle,
+                                    value: postoDestinoId,
+                                    onChange: (e) => setPostoDestinoId(e.target.value)
+                                },
+                                    React.createElement("option", { value: "" }, "Selecione…"),
+                                    postos.filter((p) => p.id !== postoOrigemId)
+                                        .map((p) => React.createElement("option", { key: p.id, value: p.id }, p.nome))
+                                )
+                            )
+                        ),
+
+                        React.createElement(Field, { label: "Responsável pela movimentação" },
+                            React.createElement("input", {
+                                style: inputStyle,
+                                value: responsavel,
+                                onChange: (e) => setResponsavel(e.target.value),
+                                placeholder: "Opcional"
+                            })
+                        ),
+                        React.createElement(Field, { label: "Observação" },
+                            React.createElement("textarea", {
+                                style: { ...inputStyle, minHeight: 56, resize: "vertical" },
+                                value: observacao,
+                                onChange: (e) => setObservacao(e.target.value),
+                                placeholder: "Opcional"
+                            })
+                        ),
+                        error && React.createElement("div", {
+                            style: { color: "var(--danger)", fontSize: 12.5 }
+                        }, error),
+                        React.createElement(PrimaryButton, {
+                            icon: ArrowLeftRight,
+                            onClick: confirmar
+                        }, totalUnidades > 0
+                            ? `Confirmar movimentação (${totalUnidades} unidade${totalUnidades !== 1 ? "s" : ""})`
+                            : "Confirmar movimentação")
+                    )
+                ),
+
+                React.createElement("div", null,
+                    React.createElement("div", {
+                        style: {
+                            fontSize: 12,
+                            fontWeight: 700,
+                            color: "var(--text-secondary)",
+                            textTransform: "uppercase",
+                            letterSpacing: "0.04em",
+                            marginBottom: 10
+                        }
+                    }, "Pré-visualização"),
+
+                    selecionadas.length > 0
+                        ? React.createElement("div", {
+                            style: { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 18 }
+                        },
+                            React.createElement("div", {
+                                style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }
+                            },
+                                React.createElement("div", {
+                                    style: { fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 15 }
+                                }, "Itens selecionados"),
+                                React.createElement("span", {
+                                    style: {
+                                        background: "var(--primary-soft)",
+                                        color: "var(--primary-dark)",
+                                        borderRadius: 20,
+                                        padding: "4px 8px",
+                                        fontWeight: 700,
+                                        fontSize: 11.5
+                                    }
+                                }, totalUnidades)
+                            ),
+                            selecionadas.map((item) =>
+                                React.createElement("div", {
+                                    key: item.key,
+                                    style: {
+                                        display: "flex",
+                                        justifyContent: "space-between",
+                                        gap: 10,
+                                        padding: "9px 0",
+                                        borderBottom: "1px solid var(--border)"
+                                    }
+                                },
+                                    React.createElement("div", null,
+                                        React.createElement("div", {
+                                            style: { fontWeight: 700, fontSize: 12.8 }
+                                        }, item.nome),
+                                        item.patrimonio && React.createElement("div", {
+                                            style: { color: "var(--text-secondary)", fontSize: 11, marginTop: 2 }
+                                        }, "Patrimônio: ", item.patrimonio)
+                                    ),
+                                    React.createElement("div", {
+                                        style: { fontWeight: 800, color: "var(--primary)", whiteSpace: "nowrap" }
+                                    }, item.qtd)
+                                )
+                            ),
+                            React.createElement("div", {
+                                style: { marginTop: 16, display: "flex", alignItems: "center", gap: 8, fontSize: 12.5 }
+                            },
+                                React.createElement("span", {
+                                    style: {
+                                        padding: "5px 9px",
+                                        borderRadius: 7,
+                                        background: "var(--hover)",
+                                        color: "var(--text-secondary)"
+                                    }
+                                }, postoOrigemId === "__sem_posto__" ? "Sem posto" : postoNome(postoOrigemId)),
+                                React.createElement(ChevronRight, { size: 14, color: "var(--text-tertiary)" }),
+                                React.createElement("span", {
+                                    style: {
+                                        padding: "5px 9px",
+                                        borderRadius: 7,
+                                        background: postoDestinoId ? "var(--primary-soft)" : "var(--hover)",
+                                        color: postoDestinoId ? "var(--primary-dark)" : "var(--text-tertiary)",
+                                        fontWeight: postoDestinoId ? 700 : 400
+                                    }
+                                }, postoDestinoId ? postoNome(postoDestinoId) : "destino…")
+                            )
+                        )
+                        : React.createElement("div", {
+                            style: { background: "var(--surface)", border: "1px dashed var(--border)", borderRadius: 12 }
+                        }, React.createElement(EmptyState, {
+                            icon: Boxes,
+                            title: postoOrigemId ? "Selecione os equipamentos" : "Selecione o posto de origem",
+                            subtitle: "Você pode escolher vários equipamentos e quantidades diferentes na mesma movimentação."
+                        }))
+                )
+            )
+    );
 }
 // ---------- Histórico ----------
 function HistoricoView({ movimentacoes, equipamentos, postoNome }) {
