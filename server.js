@@ -329,6 +329,21 @@ async function init() {
   await pool.query("CREATE INDEX IF NOT EXISTS audit_logs_created_at_idx ON audit_logs(created_at DESC)");
   await pool.query("CREATE INDEX IF NOT EXISTS audit_logs_entity_idx ON audit_logs(entity_type, entity_id)");
 
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS cautelas (
+      id BIGSERIAL PRIMARY KEY,
+      posto_id TEXT NOT NULL,
+      filename TEXT NOT NULL,
+      mime_type TEXT NOT NULL DEFAULT 'application/pdf',
+      file_size INTEGER NOT NULL,
+      file_data BYTEA NOT NULL,
+      uploaded_by_id BIGINT NULL,
+      uploaded_by_name TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query("CREATE INDEX IF NOT EXISTS cautelas_posto_idx ON cautelas(posto_id, created_at DESC)");
+
   await normalizeExistingMovementAudits();
 
   console.log("Banco inicializado.");
@@ -645,6 +660,143 @@ app.patch("/api/users/:id", authRequired, requireRole("admin"), async (req, res)
     }
 
     res.json({ user: updated });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "database_error" });
+  }
+});
+
+async function getPostoLabel(postoId) {
+  try {
+    const result = await pool.query("SELECT value FROM app_storage WHERE key = 'postos'");
+    if (!result.rowCount) return postoId;
+    const postos = JSON.parse(result.rows[0].value || "[]");
+    const posto = Array.isArray(postos) ? postos.find((p) => String(p.id) === String(postoId)) : null;
+    return posto?.nome || postoId;
+  } catch {
+    return postoId;
+  }
+}
+
+app.get("/api/cautelas/:postoId", authRequired, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, posto_id, filename, mime_type, file_size, uploaded_by_id, uploaded_by_name, created_at
+       FROM cautelas
+       WHERE posto_id = $1
+       ORDER BY created_at DESC, id DESC`,
+      [req.params.postoId]
+    );
+    res.json({ cautelas: result.rows });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "database_error" });
+  }
+});
+
+app.post(
+  "/api/cautelas/:postoId",
+  authRequired,
+  requireRole("admin", "operator"),
+  express.raw({ type: "application/pdf", limit: "15mb" }),
+  async (req, res) => {
+    try {
+      const filename = String(req.query.filename || "cautela.pdf").trim().slice(0, 255) || "cautela.pdf";
+      const file = req.body;
+
+      if (!Buffer.isBuffer(file) || !file.length) {
+        return res.status(400).json({ error: "empty_file" });
+      }
+      if (file.length < 5 || file.subarray(0, 5).toString("ascii") !== "%PDF-") {
+        return res.status(400).json({ error: "invalid_pdf" });
+      }
+
+      const result = await pool.query(
+        `INSERT INTO cautelas
+          (posto_id, filename, mime_type, file_size, file_data, uploaded_by_id, uploaded_by_name)
+         VALUES ($1, $2, 'application/pdf', $3, $4, $5, $6)
+         RETURNING id, posto_id, filename, mime_type, file_size, uploaded_by_id, uploaded_by_name, created_at`,
+        [
+          req.params.postoId,
+          filename,
+          file.length,
+          file,
+          req.user.id,
+          req.user.nome
+        ]
+      );
+
+      const postoLabel = await getPostoLabel(req.params.postoId);
+      await addAudit({
+        user: req.user,
+        entityType: "cautelas",
+        entityId: result.rows[0].id,
+        entityLabel: postoLabel,
+        action: "CREATE",
+        field: "Arquivo PDF",
+        after: filename,
+        metadata: {
+          postoId: req.params.postoId,
+          filename,
+          fileSize: file.length
+        }
+      });
+
+      res.status(201).json({ cautela: result.rows[0] });
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ error: "database_error" });
+    }
+  }
+);
+
+app.get("/api/cautelas/file/:id", authRequired, async (req, res) => {
+  try {
+    const result = await pool.query(
+      "SELECT filename, mime_type, file_data FROM cautelas WHERE id = $1",
+      [req.params.id]
+    );
+    if (!result.rowCount) return res.status(404).json({ error: "not_found" });
+
+    const row = result.rows[0];
+    const safeName = String(row.filename || "cautela.pdf").replace(/[\r\n"]/g, "");
+    res.setHeader("Content-Type", row.mime_type || "application/pdf");
+    res.setHeader("Content-Disposition", `inline; filename="${safeName}"`);
+    res.send(row.file_data);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "database_error" });
+  }
+});
+
+app.delete("/api/cautelas/:id", authRequired, requireRole("admin", "operator"), async (req, res) => {
+  try {
+    const current = await pool.query(
+      "SELECT id, posto_id, filename, file_size FROM cautelas WHERE id = $1",
+      [req.params.id]
+    );
+    if (!current.rowCount) return res.status(404).json({ error: "not_found" });
+
+    const row = current.rows[0];
+    await pool.query("DELETE FROM cautelas WHERE id = $1", [req.params.id]);
+
+    const postoLabel = await getPostoLabel(row.posto_id);
+    await addAudit({
+      user: req.user,
+      entityType: "cautelas",
+      entityId: row.id,
+      entityLabel: postoLabel,
+      action: "DELETE",
+      field: "Arquivo PDF",
+      before: row.filename,
+      metadata: {
+        postoId: row.posto_id,
+        filename: row.filename,
+        fileSize: row.file_size
+      }
+    });
+
+    res.json({ ok: true });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "database_error" });
