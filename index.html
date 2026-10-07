@@ -1501,7 +1501,7 @@ function App() {
             equipamentos, postos, persistEquip, postoNome, notify
         }) : null,
         tab === "postos" ? React.createElement(PostosView, {
-            postos, equipamentos, persistPostos, notify
+            postos, equipamentos, persistPostos, notify, canWrite
         }) : null,
         tab === "movimentar" && canWrite ? React.createElement(MovimentarView, {
             equipamentos, postos, persistEquip, movimentacoes, persistMov, postoNome, notify
@@ -2777,26 +2777,30 @@ function EquipamentoModal({ initial, postos, onClose, onSave, prefillPostoId }) 
                 React.createElement(PrimaryButton, { onClick: submit }, initial ? "Salvar alterações" : "Cadastrar")))));
 }
 // ---------- Postos ----------
-function PostosView({ postos, equipamentos, persistPostos, notify }) {
+function PostosView({ postos, equipamentos, persistPostos, notify, canWrite }) {
     const [modal, setModal] = useState(null);
+    const [cautelaPosto, setCautelaPosto] = useState(null);
+
     const postosOrdenados = useMemo(
         () => [...postos].sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR", { sensitivity: "base" })),
         [postos]
     );
+
     function countFor(id) {
         return equipamentos.filter((e) => e.postoAtualId === id).length;
     }
+
     async function handleSave(data) {
         if (data.id) {
-            await persistPostos(postosOrdenados.map((p) => (p.id === data.id ? data : p)));
+            await persistPostos(postos.map((p) => (p.id === data.id ? data : p)));
             notify("Posto atualizado");
-        }
-        else {
+        } else {
             await persistPostos([...postos, { ...data, id: uid() }]);
             notify("Posto cadastrado");
         }
         setModal(null);
     }
+
     async function handleDelete(id) {
         if (countFor(id) > 0) {
             notify("Remova ou movimente os equipamentos deste posto antes de excluí-lo");
@@ -2805,31 +2809,460 @@ function PostosView({ postos, equipamentos, persistPostos, notify }) {
         await persistPostos(postos.filter((p) => p.id !== id));
         notify("Posto removido");
     }
-    return (React.createElement("div", null,
-        React.createElement(SectionHeader, { title: "Postos", subtitle: "Locais / clientes onde os equipamentos ficam alocados", action: React.createElement(PrimaryButton, { icon: Plus, onClick: () => setModal("new") }, "Novo posto") }),
-        postos.length === 0 ? (React.createElement("div", { style: { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12 } },
-            React.createElement(EmptyState, { icon: MapPin, title: "Nenhum posto cadastrado", subtitle: "Cadastre os postos ou clientes onde os equipamentos s\u00E3o utilizados." }))) : (React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 14 } }, postos.map((p) => (React.createElement("div", { key: p.id, style: { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 16 } },
-            React.createElement("div", { style: { display: "flex", alignItems: "flex-start", justifyContent: "space-between" } },
-                React.createElement("div", { style: { width: 34, height: 34, borderRadius: 9, background: "var(--accent-soft)", display: "flex", alignItems: "center", justifyContent: "center" } },
-                    React.createElement(MapPin, { size: 16, color: "var(--accent)" })),
-                React.createElement("div", null,
-                    React.createElement(IconBtn, { icon: Pencil, onClick: () => setModal(p) }),
-                    React.createElement(IconBtn, { icon: Trash2, onClick: () => handleDelete(p.id), danger: true }))),
-            React.createElement("div", { style: { fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 15, marginTop: 10, color: "var(--text-primary)" } }, p.nome),
-            p.endereco && React.createElement("div", { style: { fontSize: 12, color: "var(--text-secondary)", marginTop: 3 } }, p.endereco),
-            p.responsavel && React.createElement("div", { style: { fontSize: 12, color: "var(--text-secondary)", marginTop: 2 } },
-                "Respons\u00E1vel: ",
-                p.responsavel),
-            React.createElement("div", { style: { marginTop: 12, fontSize: 12, color: "var(--primary-dark)", fontWeight: 600, display: "flex", alignItems: "center", gap: 5 } },
-                React.createElement(Package, { size: 13 }),
-                " ",
-                countFor(p.id),
-                " equipamento",
-                countFor(p.id) !== 1 ? "s" : "",
-                " alocado",
-                countFor(p.id) !== 1 ? "s" : "")))))),
-        modal && React.createElement(PostoModal, { initial: modal === "new" ? null : modal, onClose: () => setModal(null), onSave: handleSave })));
+
+    return React.createElement("div", null,
+        React.createElement(SectionHeader, {
+            title: "Postos",
+            subtitle: "Locais / clientes onde os equipamentos ficam alocados",
+            action: canWrite
+                ? React.createElement(PrimaryButton, { icon: Plus, onClick: () => setModal("new") }, "Novo posto")
+                : null
+        }),
+
+        postos.length === 0
+            ? React.createElement("div", {
+                style: {
+                    background: "var(--surface)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 12
+                }
+            }, React.createElement(EmptyState, {
+                icon: MapPin,
+                title: "Nenhum posto cadastrado",
+                subtitle: "Cadastre os postos ou clientes onde os equipamentos são utilizados."
+            }))
+            : React.createElement("div", {
+                style: {
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
+                    gap: 14
+                }
+            },
+                postosOrdenados.map((p) =>
+                    React.createElement("div", {
+                        key: p.id,
+                        style: {
+                            background: "var(--surface)",
+                            border: "1px solid var(--border)",
+                            borderRadius: 12,
+                            padding: 16
+                        }
+                    },
+                        React.createElement("div", {
+                            style: {
+                                display: "flex",
+                                alignItems: "flex-start",
+                                justifyContent: "space-between"
+                            }
+                        },
+                            React.createElement("div", {
+                                style: {
+                                    width: 34,
+                                    height: 34,
+                                    borderRadius: 9,
+                                    background: "var(--accent-soft)",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center"
+                                }
+                            }, React.createElement(MapPin, { size: 16, color: "var(--accent)" })),
+                            canWrite ? React.createElement("div", null,
+                                React.createElement(IconBtn, { icon: Pencil, onClick: () => setModal(p) }),
+                                React.createElement(IconBtn, {
+                                    icon: Trash2,
+                                    onClick: () => handleDelete(p.id),
+                                    danger: true
+                                })
+                            ) : null
+                        ),
+
+                        React.createElement("div", {
+                            style: {
+                                fontFamily: "var(--font-display)",
+                                fontWeight: 700,
+                                fontSize: 15,
+                                marginTop: 10,
+                                color: "var(--text-primary)"
+                            }
+                        }, p.nome),
+
+                        p.endereco && React.createElement("div", {
+                            style: {
+                                fontSize: 12,
+                                color: "var(--text-secondary)",
+                                marginTop: 3
+                            }
+                        }, p.endereco),
+
+                        p.responsavel && React.createElement("div", {
+                            style: {
+                                fontSize: 12,
+                                color: "var(--text-secondary)",
+                                marginTop: 2
+                            }
+                        }, "Responsável: ", p.responsavel),
+
+                        React.createElement("div", {
+                            style: {
+                                marginTop: 12,
+                                fontSize: 12,
+                                color: "var(--primary-dark)",
+                                fontWeight: 600,
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 5
+                            }
+                        },
+                            React.createElement(Package, { size: 13 }),
+                            countFor(p.id),
+                            " equipamento",
+                            countFor(p.id) !== 1 ? "s" : "",
+                            " alocado",
+                            countFor(p.id) !== 1 ? "s" : ""
+                        ),
+
+                        React.createElement("button", {
+                            type: "button",
+                            onClick: () => setCautelaPosto(p),
+                            style: {
+                                marginTop: 13,
+                                width: "100%",
+                                border: "1px solid var(--border)",
+                                borderRadius: 8,
+                                padding: "8px 10px",
+                                background: "var(--hover)",
+                                color: "var(--primary-dark)",
+                                fontWeight: 700,
+                                fontSize: 12,
+                                cursor: "pointer",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                gap: 7
+                            }
+                        },
+                            React.createElement(FileSpreadsheet, { size: 14 }),
+                            "Cautelas"
+                        )
+                    )
+                )
+            ),
+
+        modal && React.createElement(PostoModal, {
+            initial: modal === "new" ? null : modal,
+            onClose: () => setModal(null),
+            onSave: handleSave
+        }),
+
+        cautelaPosto && React.createElement(CautelasModal, {
+            posto: cautelaPosto,
+            canWrite,
+            notify,
+            onClose: () => setCautelaPosto(null)
+        })
+    );
 }
+
+function CautelasModal({ posto, canWrite, notify, onClose }) {
+    const [cautelas, setCautelas] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [uploading, setUploading] = useState(false);
+    const [error, setError] = useState("");
+
+    async function carregar() {
+        setLoading(true);
+        setError("");
+        try {
+            const r = await authFetch("/api/cautelas/" + encodeURIComponent(posto.id));
+            setCautelas(r.cautelas || []);
+        } catch {
+            setError("Não foi possível carregar as cautelas deste posto.");
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    useEffect(() => {
+        carregar();
+    }, [posto.id]);
+
+    function formatBytes(bytes) {
+        const n = Number(bytes) || 0;
+        if (n < 1024) return n + " B";
+        if (n < 1024 * 1024) return (n / 1024).toFixed(1).replace(".", ",") + " KB";
+        return (n / (1024 * 1024)).toFixed(1).replace(".", ",") + " MB";
+    }
+
+    function formatDateTime(value) {
+        if (!value) return "-";
+        try {
+            return new Date(value).toLocaleString("pt-BR");
+        } catch {
+            return value;
+        }
+    }
+
+    async function uploadPdf(event) {
+        const file = event.target.files?.[0];
+        event.target.value = "";
+        if (!file) return;
+
+        if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
+            setError("Selecione um arquivo PDF.");
+            return;
+        }
+        if (file.size > 15 * 1024 * 1024) {
+            setError("O PDF deve ter no máximo 15 MB.");
+            return;
+        }
+
+        setUploading(true);
+        setError("");
+        try {
+            await authFetch(
+                "/api/cautelas/" + encodeURIComponent(posto.id) + "?filename=" + encodeURIComponent(file.name),
+                {
+                    method: "POST",
+                    headers: { "Content-Type": "application/pdf" },
+                    body: file
+                }
+            );
+            notify("Cautela arquivada");
+            await carregar();
+        } catch (err) {
+            setError(err.data?.error === "invalid_pdf"
+                ? "O arquivo enviado não é um PDF válido."
+                : "Não foi possível enviar a cautela.");
+        } finally {
+            setUploading(false);
+        }
+    }
+
+    async function abrirPdf(id) {
+        setError("");
+        try {
+            const token = getAuthToken();
+            const res = await fetch(PATRIMONET_API + "/api/cautelas/file/" + id, {
+                headers: token ? { Authorization: "Bearer " + token } : {}
+            });
+            if (!res.ok) throw new Error("request_failed");
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const nova = window.open(url, "_blank");
+            if (!nova) {
+                const a = document.createElement("a");
+                a.href = url;
+                a.target = "_blank";
+                a.rel = "noopener";
+                a.click();
+            }
+            setTimeout(() => URL.revokeObjectURL(url), 60000);
+        } catch {
+            setError("Não foi possível abrir o PDF.");
+        }
+    }
+
+    async function excluir(id) {
+        if (!window.confirm("Excluir esta cautela arquivada?")) return;
+        setError("");
+        try {
+            await authFetch("/api/cautelas/" + id, { method: "DELETE" });
+            notify("Cautela excluída");
+            await carregar();
+        } catch {
+            setError("Não foi possível excluir a cautela.");
+        }
+    }
+
+    return React.createElement(Modal, {
+        title: "Cautelas — " + posto.nome,
+        onClose,
+        width: 720
+    },
+        React.createElement("div", {
+            style: {
+                display: "flex",
+                flexDirection: "column",
+                gap: 14
+            }
+        },
+            React.createElement("div", {
+                style: {
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    gap: 12,
+                    padding: "11px 12px",
+                    background: "var(--hover)",
+                    borderRadius: 9
+                }
+            },
+                React.createElement("div", null,
+                    React.createElement("div", {
+                        style: {
+                            fontWeight: 700,
+                            fontSize: 13,
+                            color: "var(--text-primary)"
+                        }
+                    }, "Arquivo digital do posto"),
+                    React.createElement("div", {
+                        style: {
+                            marginTop: 2,
+                            fontSize: 11.5,
+                            color: "var(--text-secondary)"
+                        }
+                    }, "Anexe o PDF escaneado da cautela. Limite de 15 MB por arquivo.")
+                ),
+                canWrite ? React.createElement("label", {
+                    style: {
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 7,
+                        background: "var(--primary)",
+                        color: "#fff",
+                        borderRadius: 8,
+                        padding: "8px 11px",
+                        fontWeight: 700,
+                        fontSize: 12,
+                        cursor: uploading ? "wait" : "pointer",
+                        whiteSpace: "nowrap",
+                        opacity: uploading ? 0.7 : 1
+                    }
+                },
+                    React.createElement(Upload, { size: 14 }),
+                    uploading ? "Enviando…" : "Anexar PDF",
+                    React.createElement("input", {
+                        type: "file",
+                        accept: "application/pdf,.pdf",
+                        disabled: uploading,
+                        onChange: uploadPdf,
+                        style: { display: "none" }
+                    })
+                ) : null
+            ),
+
+            error && React.createElement("div", {
+                style: {
+                    color: "var(--danger)",
+                    background: "var(--danger-bg)",
+                    borderRadius: 8,
+                    padding: "9px 11px",
+                    fontSize: 12
+                }
+            }, error),
+
+            loading
+                ? React.createElement("div", {
+                    style: {
+                        padding: 20,
+                        textAlign: "center",
+                        color: "var(--text-secondary)"
+                    }
+                }, "Carregando cautelas…")
+                : cautelas.length === 0
+                    ? React.createElement("div", {
+                        style: {
+                            border: "1px dashed var(--border)",
+                            borderRadius: 10
+                        }
+                    }, React.createElement(EmptyState, {
+                        icon: FileSpreadsheet,
+                        title: "Nenhuma cautela arquivada",
+                        subtitle: canWrite
+                            ? "Escaneie a cautela impressa e anexe o PDF neste posto."
+                            : "Ainda não há documentos arquivados neste posto."
+                    }))
+                    : React.createElement("div", {
+                        style: {
+                            display: "grid",
+                            gap: 8,
+                            maxHeight: 390,
+                            overflowY: "auto"
+                        }
+                    },
+                        cautelas.map((c) =>
+                            React.createElement("div", {
+                                key: c.id,
+                                style: {
+                                    display: "grid",
+                                    gridTemplateColumns: "1fr auto",
+                                    gap: 12,
+                                    alignItems: "center",
+                                    border: "1px solid var(--border)",
+                                    borderRadius: 9,
+                                    padding: "11px 12px"
+                                }
+                            },
+                                React.createElement("div", {
+                                    style: { minWidth: 0 }
+                                },
+                                    React.createElement("div", {
+                                        style: {
+                                            fontWeight: 700,
+                                            fontSize: 12.5,
+                                            color: "var(--text-primary)",
+                                            overflow: "hidden",
+                                            textOverflow: "ellipsis",
+                                            whiteSpace: "nowrap"
+                                        }
+                                    }, c.filename),
+                                    React.createElement("div", {
+                                        style: {
+                                            marginTop: 3,
+                                            fontSize: 10.8,
+                                            color: "var(--text-secondary)"
+                                        }
+                                    },
+                                        formatBytes(c.file_size),
+                                        " · ",
+                                        formatDateTime(c.created_at),
+                                        " · enviado por ",
+                                        c.uploaded_by_name || "Usuário"
+                                    )
+                                ),
+                                React.createElement("div", {
+                                    style: {
+                                        display: "flex",
+                                        gap: 6,
+                                        alignItems: "center"
+                                    }
+                                },
+                                    React.createElement("button", {
+                                        type: "button",
+                                        onClick: () => abrirPdf(c.id),
+                                        style: {
+                                            border: "1px solid var(--border)",
+                                            background: "var(--surface)",
+                                            color: "var(--primary)",
+                                            borderRadius: 7,
+                                            padding: "7px 9px",
+                                            fontSize: 11.5,
+                                            fontWeight: 700,
+                                            cursor: "pointer"
+                                        }
+                                    }, "Abrir"),
+                                    canWrite ? React.createElement("button", {
+                                        type: "button",
+                                        onClick: () => excluir(c.id),
+                                        style: {
+                                            border: "none",
+                                            background: "var(--danger-bg)",
+                                            color: "var(--danger)",
+                                            borderRadius: 7,
+                                            padding: "7px 9px",
+                                            fontSize: 11.5,
+                                            fontWeight: 700,
+                                            cursor: "pointer"
+                                        }
+                                    }, "Excluir") : null
+                                )
+                            )
+                        )
+                    )
+        )
+    );
+}
+
 function PostoModal({ initial, onClose, onSave }) {
     const [nome, setNome] = useState(initial?.nome || "");
     const [endereco, setEndereco] = useState(initial?.endereco || "");
