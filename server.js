@@ -855,6 +855,73 @@ app.get("/api/audit", authRequired, requireRole("admin"), async (req, res) => {
   }
 });
 
+
+app.get("/api/export/full", authRequired, requireRole("admin"), async (req, res) => {
+  try {
+    const [storageResult, usersResult, auditResult, cautelasResult] = await Promise.all([
+      pool.query("SELECT key, value, updated_at FROM app_storage ORDER BY key"),
+      pool.query("SELECT id, nome, email, role, ativo, created_at FROM users ORDER BY nome"),
+      pool.query("SELECT id, user_id, user_name, user_email, entity_type, entity_id, entity_label, action, field_name, before_value, after_value, metadata, created_at FROM audit_logs ORDER BY created_at, id"),
+      pool.query("SELECT id, posto_id, filename, mime_type, file_size, uploaded_by_id, uploaded_by_name, created_at, file_data FROM cautelas ORDER BY posto_id, created_at, id")
+    ]);
+
+    const appStorage = storageResult.rows.map((row) => {
+      let parsedValue = null;
+      try {
+        parsedValue = JSON.parse(row.value);
+      } catch {}
+      return {
+        key: row.key,
+        value: row.value,
+        parsedValue,
+        updatedAt: row.updated_at
+      };
+    });
+
+    const storedArray = (key) => {
+      const item = appStorage.find((entry) => entry.key === key);
+      return Array.isArray(item?.parsedValue) ? item.parsedValue : [];
+    };
+
+    const cautelas = cautelasResult.rows.map((row) => ({
+      id: row.id,
+      posto_id: row.posto_id,
+      filename: row.filename,
+      mime_type: row.mime_type,
+      file_size: row.file_size,
+      uploaded_by_id: row.uploaded_by_id,
+      uploaded_by_name: row.uploaded_by_name,
+      created_at: row.created_at,
+      file_data_base64: Buffer.isBuffer(row.file_data)
+        ? row.file_data.toString("base64")
+        : Buffer.from(row.file_data || "").toString("base64")
+    }));
+
+    res.setHeader("Cache-Control", "no-store");
+    res.json({
+      format: "ativum-full-backup",
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      source: "Ativum / PostgreSQL",
+      counts: {
+        postos: storedArray("postos").length,
+        equipamentos: storedArray("equipamentos").length,
+        movimentacoes: storedArray("movimentacoes").length,
+        usuarios: usersResult.rows.length,
+        auditoria: auditResult.rows.length,
+        cautelas: cautelas.length
+      },
+      appStorage,
+      users: usersResult.rows,
+      auditLogs: auditResult.rows,
+      cautelas
+    });
+  } catch (error) {
+    console.error("Falha ao exportar backup completo:", error);
+    res.status(500).json({ error: "export_failed" });
+  }
+});
+
 app.get("/api/storage/:key", authRequired, async (req, res) => {
   try {
     const result = await pool.query("SELECT value FROM app_storage WHERE key = $1", [req.params.key]);
