@@ -14,6 +14,7 @@
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 </head>
 <body>
   <div id="root"></div>
@@ -1249,6 +1250,213 @@ function AuditView() {
     );
 }
 
+
+function ExportDataView({ equipamentos, postos, movimentacoes, notify }) {
+    const [exporting, setExporting] = useState(false);
+    const [error, setError] = useState("");
+
+    function addWorksheet(workbook, name, rows) {
+        const worksheet = workbook.addWorksheet(name);
+        const cleanRows = (Array.isArray(rows) ? rows : []).map((row) => {
+            const clean = {};
+            Object.entries(row || {}).forEach(([key, value]) => {
+                if (key === "file_data_base64") return;
+                let cellValue = value && typeof value === "object" ? JSON.stringify(value) : (value == null ? "" : value);
+                if (typeof cellValue === "string" && cellValue.length > 30000) {
+                    cellValue = cellValue.slice(0, 30000) + " [conteúdo completo preservado no backup JSON]";
+                }
+                clean[key] = cellValue;
+            });
+            return clean;
+        });
+        const headers = Array.from(new Set(cleanRows.flatMap((row) => Object.keys(row))));
+        if (!headers.length) {
+            worksheet.addRow(["Nenhum registro"]);
+            return;
+        }
+        worksheet.columns = headers.map((header) => ({
+            header,
+            key: header,
+            width: Math.min(Math.max(String(header).length + 2, 14), 32)
+        }));
+        const headerRow = worksheet.addRow(headers);
+        headerRow.font = { bold: true, color: { argb: "FFFFFFFF" } };
+        headerRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF285E59" } };
+        cleanRows.forEach((row) => worksheet.addRow(row));
+        worksheet.views = [{ state: "frozen", ySplit: 1 }];
+        worksheet.autoFilter = {
+            from: { row: 1, column: 1 },
+            to: { row: 1, column: headers.length }
+        };
+    }
+
+    async function exportarBackup() {
+        setExporting(true);
+        setError("");
+        try {
+            if (!window.JSZip || !window.ExcelJS) {
+                throw new Error("Não foi possível carregar as ferramentas de exportação. Atualize a página e tente novamente.");
+            }
+
+            const serverData = await authFetch("/api/export/full");
+            const snapshotNavegador = {
+                postos: Array.isArray(postos) ? postos : [],
+                equipamentos: Array.isArray(equipamentos) ? equipamentos : [],
+                movimentacoes: Array.isArray(movimentacoes) ? movimentacoes : []
+            };
+            const cautelasOriginais = Array.isArray(serverData.cautelas) ? serverData.cautelas : [];
+            const caminhoArquivo = (cautela) => {
+                const nomeSeguro = String(cautela.filename || "cautela.pdf").replace(/[\\/:*?"<>|]/g, "_");
+                return "cautelas/" + String(cautela.id) + "_" + nomeSeguro;
+            };
+            const cautelasJson = cautelasOriginais.map((cautela) => {
+                const { file_data_base64, ...metadados } = cautela;
+                return { ...metadados, arquivoNoBackup: caminhoArquivo(cautela) };
+            });
+            const backup = {
+                format: "ativum-full-backup",
+                version: 1,
+                exportedAt: serverData.exportedAt || new Date().toISOString(),
+                source: "Ativum",
+                counts: {
+                    ...(serverData.counts || {}),
+                    snapshotNavegador: {
+                        postos: snapshotNavegador.postos.length,
+                        equipamentos: snapshotNavegador.equipamentos.length,
+                        movimentacoes: snapshotNavegador.movimentacoes.length
+                    }
+                },
+                notes: [
+                    "appStorage preserva os valores brutos armazenados no banco de dados.",
+                    "snapshotNavegador preserva os dados carregados nesta sessão do navegador, inclusive possíveis alterações ainda não sincronizadas.",
+                    "Os arquivos PDF das cautelas ficam na pasta cautelas/ dentro deste ZIP.",
+                    "Por segurança, os hashes de senha dos usuários não são exportados; será necessário redefinir as senhas ao migrar contas."
+                ],
+                appStorage: serverData.appStorage || [],
+                snapshotNavegador,
+                users: serverData.users || [],
+                auditLogs: serverData.auditLogs || [],
+                cautelas: cautelasJson
+            };
+
+            const zip = new window.JSZip();
+            zip.file("backup-ativum.json", JSON.stringify(backup, null, 2));
+            cautelasOriginais.forEach((cautela) => {
+                if (cautela.file_data_base64) {
+                    zip.file(caminhoArquivo(cautela), cautela.file_data_base64, { base64: true });
+                }
+            });
+
+            const workbook = new window.ExcelJS.Workbook();
+            workbook.creator = "Ativum";
+            workbook.created = new Date();
+            const resumo = workbook.addWorksheet("Resumo");
+            resumo.addRows([
+                ["BACKUP COMPLETO DO ATIVUM"],
+                ["Exportado em", backup.exportedAt],
+                ["Equipamentos na sessão", snapshotNavegador.equipamentos.length],
+                ["Postos na sessão", snapshotNavegador.postos.length],
+                ["Movimentações na sessão", snapshotNavegador.movimentacoes.length],
+                ["Usuários", (serverData.users || []).length],
+                ["Registros de auditoria", (serverData.auditLogs || []).length],
+                ["Cautelas PDF", cautelasOriginais.length],
+                ["Observação", "O backup-ativum.json é a cópia completa para migração; esta planilha é para consulta."]
+            ]);
+            resumo.getRow(1).font = { bold: true, size: 16 };
+            resumo.columns = [{ width: 30 }, { width: 90 }];
+            addWorksheet(workbook, "Equipamentos", snapshotNavegador.equipamentos);
+            addWorksheet(workbook, "Postos", snapshotNavegador.postos);
+            addWorksheet(workbook, "Movimentações", snapshotNavegador.movimentacoes);
+            addWorksheet(workbook, "Usuários", serverData.users || []);
+            addWorksheet(workbook, "Auditoria", serverData.auditLogs || []);
+            addWorksheet(workbook, "Cautelas", cautelasJson);
+            const excelBuffer = await workbook.xlsx.writeBuffer();
+            zip.file("ativum-dados.xlsx", excelBuffer);
+
+            const blob = await zip.generateAsync({
+                type: "blob",
+                compression: "DEFLATE",
+                compressionOptions: { level: 5 }
+            });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = "ativum-backup-" + new Date().toISOString().slice(0, 10) + ".zip";
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+            if (typeof notify === "function") notify("Backup completo exportado.");
+        } catch (e) {
+            console.error("Falha na exportação completa do Ativum:", e);
+            setError(e?.message || "Não foi possível exportar os dados. Tente novamente.");
+        } finally {
+            setExporting(false);
+        }
+    }
+
+    const cardStyle = {
+        background: "var(--surface)",
+        border: "1px solid var(--border)",
+        borderRadius: 14,
+        padding: 22
+    };
+    const statStyle = {
+        background: "var(--hover)",
+        borderRadius: 10,
+        padding: "12px 14px"
+    };
+
+    return React.createElement("div", null,
+        React.createElement(SectionHeader, {
+            title: "Exportar dados",
+            subtitle: "Gere uma cópia completa do Ativum para guardar ou migrar para outro sistema."
+        }),
+        React.createElement("div", { style: { ...cardStyle, maxWidth: 900, marginBottom: 18 } },
+            React.createElement("div", { style: { fontSize: 15, fontWeight: 700, color: "var(--text-primary)", marginBottom: 8 } }, "Backup completo"),
+            React.createElement("div", { style: { fontSize: 13, lineHeight: 1.65, color: "var(--text-secondary)", marginBottom: 18 } },
+                "O arquivo ZIP inclui um backup JSON para migração, uma planilha Excel para consulta e os PDFs das cautelas anexadas ao banco de dados."),
+            React.createElement("div", { className: "grid-2", style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginBottom: 20 } },
+                [["Equipamentos", equipamentos.length], ["Postos", postos.length], ["Movimentações", movimentacoes.length]].map(([label, value]) =>
+                    React.createElement("div", { key: label, style: statStyle },
+                        React.createElement("div", { style: { fontSize: 23, fontWeight: 700, color: "var(--text-primary)" } }, value),
+                        React.createElement("div", { style: { fontSize: 12, color: "var(--text-secondary)" } }, label)
+                    )
+                )
+            ),
+            React.createElement("button", {
+                type: "button",
+                onClick: exportarBackup,
+                disabled: exporting,
+                style: {
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 8,
+                    padding: "11px 16px",
+                    border: "none",
+                    borderRadius: 9,
+                    background: exporting ? "var(--border)" : "var(--primary)",
+                    color: "#fff",
+                    fontSize: 13.5,
+                    fontWeight: 700,
+                    cursor: exporting ? "wait" : "pointer",
+                    opacity: exporting ? 0.75 : 1
+                }
+            }, React.createElement(Download, { size: 16 }), exporting ? "Preparando backup..." : "Baixar backup completo (.ZIP)"),
+            error ? React.createElement("div", {
+                role: "alert",
+                style: { marginTop: 14, padding: 12, borderRadius: 8, background: "var(--danger-bg)", color: "var(--danger)", fontSize: 12.5, lineHeight: 1.5 }
+            }, error) : null
+        ),
+        React.createElement("div", { style: { ...cardStyle, maxWidth: 900, borderColor: "var(--warn)" } },
+            React.createElement("div", { style: { fontSize: 13, fontWeight: 700, color: "var(--text-primary)", marginBottom: 6 } }, "Importante"),
+            React.createElement("div", { style: { fontSize: 12.5, lineHeight: 1.65, color: "var(--text-secondary)" } },
+                "O backup contém informações patrimoniais e histórico de auditoria; guarde o arquivo em local seguro. Os dados do banco e os dados carregados no navegador são exportados separadamente para ajudar a identificar diferenças. Senhas não são incluídas.")
+        )
+    );
+}
+
 function App() {
     const [tab, setTab] = useState("dashboard");
     const [authLoading, setAuthLoading] = useState(true);
@@ -1380,7 +1588,8 @@ function App() {
         { id: "entregas", label: "Entregas", icon: Truck, show: true },
         { id: "importar", label: "Importar planilha", icon: Upload, show: canWrite },
         { id: "auditoria", label: "Auditoria", icon: History, show: isAdmin },
-        { id: "usuarios", label: "Usuários", icon: Tag, show: isAdmin }
+        { id: "usuarios", label: "Usuários", icon: Tag, show: isAdmin },
+        { id: "exportar", label: "Exportar dados", icon: Download, show: isAdmin }
     ].filter((n) => n.show);
 
     const sidebar = React.createElement("aside", {
@@ -1518,6 +1727,9 @@ function App() {
         tab === "auditoria" && isAdmin ? React.createElement(AuditView, null) : null,
         tab === "usuarios" && isAdmin ? React.createElement(UsersView, {
             notify, currentUser
+        }) : null,
+        tab === "exportar" && isAdmin ? React.createElement(ExportDataView, {
+            equipamentos, postos, movimentacoes, notify
         }) : null
     );
 
